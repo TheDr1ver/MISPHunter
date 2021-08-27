@@ -1,0 +1,5 @@
+*.txt
+*.log
+*.ipynb
+__pycache__/
+*.py[cod]
