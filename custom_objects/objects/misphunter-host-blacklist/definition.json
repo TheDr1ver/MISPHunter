@@ -1,0 +1,25 @@
+{
+    "attributes": {
+        "local-block": {
+            "description": "IP address that we want to ignore for this specific event",
+            "misp-attribute": "ip-dst",
+            "disable_correlation": true,
+            "ui-priority": 1
+        },
+        "global-block": {
+            "description": "IP address that we want to ignore for ALL MISPHunter events",
+            "misp-attribute": "ip-dst",
+            "disable_correlation": true,
+            "ui-priority": 1
+        }
+    },
+    "description": "Object tracks IP addresses that we do not wish to add as misphunter-host objects.",
+    "meta-category": "threat-hunting",
+    "name": "misphunter-host-blacklist",
+    "requiredOneOf": [
+        "local-block",
+        "global-block"
+    ],
+    "uuid": "528bb12a-fab8-11eb-94e6-000d3a98c781",
+    "version": 2
+}

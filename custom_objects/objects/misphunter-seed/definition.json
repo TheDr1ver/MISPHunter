@@ -1,0 +1,56 @@
+{
+    "attributes": {
+        "service": {
+            "description": "The service for which this this search string was written",
+            "misp-attribute": "text",
+            "disable_correlation": true,
+            "ui-priority": 1,
+            "values_list": [
+                "censys-v1",
+                "censys-v2",
+                "shodan"
+            ],
+            "multiple": false
+        },
+        "search-string": {
+            "description": "Search string you wish to run against the selected service",
+            "misp-attribute": "text",
+            "disable_correlation": true,
+            "ui-priority": 1,
+            "multiple": false
+        },
+        "enabled": {
+            "description": "Determines if search is enabled 1 = enabled 0 = disabled",
+            "misp-attribute": "boolean",
+            "disable_correlation": true,
+            "ui-priority": 1,
+            "values_list": [
+                "1",
+                "0"
+            ],
+            "multiple": false
+        },
+        "last-run": {
+            "description": "Keeps track of the last time the search for this seed was executed.",
+            "misp-attribute": "datetime",
+            "disable_correlation": true,
+            "ui-priority": 0
+        },
+        "update-freq": {
+            "description": "Keeps track of how frequently this search should be re-run (in hours).",
+            "misp-attribute": "text",
+            "disable_correlation": true,
+            "ui-priority": 0
+        }
+    },
+    "description": "Object holds the raw searches that populate the rest of the event. This should be the first thing you make for a misphunter event.",
+    "meta-category": "threat-hunting",
+    "name": "misphunter-seed",
+    "required": [
+        "service",
+        "search-string",
+        "enabled"
+    ],
+    "uuid": "a891fc40-fad2-11eb-a495-000d3a98c781",
+    "version": 2
+}

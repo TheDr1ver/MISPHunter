@@ -1,0 +1,81 @@
+{
+    "attributes": {
+        "host-ip": {
+            "description": "Host returned from search",
+            "misp-attribute": "ip-dst",
+            "disable_correlation": false,
+            "multiple": false,
+            "ui-priority": 1
+        },
+        "json": {
+            "description": "JSON blob returned for host",
+            "misp-attribute": "attachment",
+            "disable_correlation": true,
+            "ui-priority": 0
+        },
+        "censys-v1-json": {
+            "description": "JSON blob returned for host",
+            "misp-attribute": "attachment",
+            "disable_correlation": true,
+            "ui-priority": 0
+        },
+        "censys-v2-json": {
+            "description": "JSON blob returned for host",
+            "misp-attribute": "attachment",
+            "disable_correlation": true,
+            "ui-priority": 0
+        },
+        "shodan-json": {
+            "description": "JSON blob returned for host",
+            "misp-attribute": "attachment",
+            "disable_correlation": true,
+            "ui-priority": 0
+        },
+        "blacklisted": {
+            "description": "0 = continue to pivot on this host for this event, 1 = stop searching for this host",
+            "misp-attribute": "boolean",
+            "disable_correlation": true,
+            "multiple": false,
+            "ui-priority": true
+        },
+        "extracted-certificate": {
+            "description": "Certificate found on host",
+            "misp-attribute": "x509-fingerprint-sha256",
+            "disable_correlation": false,
+            "ui-priority": 1
+        },
+        "extracted-domain": {
+            "description": "Domain found on host",
+            "misp-attribute": "domain",
+            "disable_correlation": false,
+            "ui-priority": 1
+        },
+        "extracted-email": {
+            "description": "Email found on host",
+            "misp-attribute": "email-src",
+            "disable_correlation": false,
+            "ui-priority": 1
+        },
+        "extracted-ip": {
+            "description": "IP found on host",
+            "misp-attribute": "attachment",
+            "disable_correlation": false,
+            "ui-priority": 1
+        },
+        "extracted-url": {
+            "description": "URL found on host",
+            "misp-attribute": "url",
+            "disable_correlation": false,
+            "ui-priority": 1
+        }
+    },
+    "description": "Object refers to a host found by a threat intel hunting search. Searches are run against services such as Censys and Shodan.",
+    "meta-category": "threat-hunting",
+    "name": "misphunter-host",
+    "required": [
+        "host-ip",
+        "blacklisted"
+    ],
+    "uuid": "3d385c20-fae4-11eb-a4f5-000d3a98c781",
+    "version": 4
+}

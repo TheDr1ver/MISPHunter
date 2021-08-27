@@ -1,0 +1,91 @@
+{
+    "attributes": {
+        "cert-sha256": {
+            "description": "Certificate used for finding additional hosts",
+            "misp-attribute": "x509-fingerprint-sha256",
+            "disable_correlation": false,
+            "multiple": false,
+            "ui-priority": 1
+        },
+        "cert-sha1": {
+            "description": "Certificate used for finding additional hosts",
+            "misp-attribute": "x509-fingerprint-sha1",
+            "disable_correlation": false,
+            "multiple": false,
+            "ui-priority": 1
+        },
+        "cert-md5": {
+            "description": "Certificate used for finding additional hosts",
+            "misp-attribute": "x509-fingerprint-md5",
+            "disable_correlation": false,
+            "multiple": false,
+            "ui-priority": 1
+        },
+        "cert-issuer-dn": {
+            "description": "Certificate Issuer DN",
+            "misp-attribute": "text",
+            "disable_correlation": true,
+            "multiple": false,
+            "ui-priority": 1
+        },
+        "cert-subject-dn": {
+            "description": "Certificate Subject DN",
+            "misp-attribute": "text",
+            "disable_correlation": true,
+            "multiple": false,
+            "ui-priority": 1
+        },
+        "cert-ip": {
+            "description": "IP found by pivoting on pivot-certificate",
+            "misp-attribute": "ip-dst",
+            "disable_correlation": false,
+            "ui-priority": 1
+        },
+        "cert-domain": {
+            "description": "Domain found by pivoting on pivot-certificate",
+            "misp-attribute": "domain",
+            "disable_correlation": false,
+            "ui-priority": 1
+        },
+        "blacklisted": {
+            "description": "0 = Keep searching for hosts associated with this certificate, 1 = Never search this cert again.",
+            "misp-attribute": "boolean",
+            "disable_correlation": true,
+            "multiple": false,
+            "ui-priority": 1
+        },
+        "censys-v1-json": {
+            "description": "Full JSON response with cert info",
+            "misp-attribute": "attachment",
+            "disable_correlation": true,
+            "ui-priority": 0
+        },
+        "censys-v2-json": {
+            "description": "Full JSON response with cert info",
+            "misp-attribute": "attachment",
+            "disable_correlation": true,
+            "ui-priority": 0
+        },
+        "shodan-json": {
+            "description": "Full JSON response with cert info",
+            "misp-attribute": "attachment",
+            "disable_correlation": true,
+            "ui-priority": 0
+        },
+        "riskiq-json": {
+            "description": "Full JSON response with cert info",
+            "misp-attribute": "attachment",
+            "disable_correlation": true,
+            "ui-priority": 0
+        }
+    },
+    "description": "Object tracks certificates that have a low number of hosts associated with them. These IPs can be used for further hunting.",
+    "meta-category": "threat-hunting",
+    "name": "misphunter-cert",
+    "required": [
+        "cert-sha256",
+        "blacklisted"
+    ],
+    "uuid": "cc56882c-fc34-11eb-9672-000d3a98c781",
+    "version": 2
+}
