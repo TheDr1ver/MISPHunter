@@ -65,14 +65,21 @@ def add_json_attr(checksum, raw_sorted_json_text, host_obj, json_type, comment="
 def blacklist_check_cert(misphunter, cert):
     _log.debug(f"Checking misphunter-cert object {cert.uuid} to determine if it should be blacklisted.")
     cert_ips = cert.get_attributes_by_relation('cert-ip')
-    sha256 = misphandler.get_attr_val_by_rel(cert, 'cert-sha256')
+    sha256 = get_attr_val_by_rel(cert, 'cert-sha256')
     if len(cert_ips) <= 1:
-        blacklist_attr = misphandler.get_attr_obj_by_rel(cert, 'blacklisted')
+        blacklist_attr = get_attr_obj_by_rel(cert, 'blacklisted')
         if int(blacklist_attr.value) == 0:
             _log.info(f"Cert {sha256} - {cert.uuid} only had {len(cert_ips)} IPs associated with it." 
                 " Blacklisting cert from future pivots!")
             blacklist_attr.value = 1
-            cert = misphandler.update_existing_object(misphunter, cert)
+            cert = update_existing_object(misphunter, cert)
+            if 'new_auto_blacklists' not in misphunter.run_stats:
+                misphunter.run_stats['new_auto_blacklists'] = {}
+            if cert.event_id not in misphunter.run_stats['new_auto_blacklists']:
+                misphunter.run_stats['new_auto_blacklists'][cert.event_id] = {}
+            if 'misphunter-certs' not in misphunter.run_stats['new_auto_blacklists'][cert.event_id]:
+                misphunter.run_stats['new_auto_blacklists'][cert.event_id]['misphunter-certs'] = []
+            misphunter.run_stats['new_auto_blacklists'][cert.event_id]['misphunter-certs'].append(sha256)
     else:
         _log.debug(f"Cert {sha256} - {cert.uuid} had {len(cert_ips)} IPs associated with it. Leaving blacklist val alone!")
     return cert
@@ -112,6 +119,14 @@ def build_misphunter_cert(misphunter, cert, parent_obj, event, raw_data):
     comment=f"Certificate was seen on {ip}"
     cert_obj.add_reference(parent_obj.uuid, "derived-from", comment=comment)
 
+    sha256 = parsed_data['fingerprint_sha256']
+    if 'new_certs' not in misphunter.run_stats:
+        misphunter.run_stats['new_certs'] = {str(event.id): [sha256]}
+    elif str(event.id) not in misphunter.run_stats['new_certs']:
+        misphunter.run_stats['new_certs'][str(event.id)] = [sha256]
+    else:
+        misphunter.run_stats['new_certs'][str(event.id)].append(sha256)
+
     for attr in cert_obj.Attribute:
         update_timestamps(attr)
     
@@ -137,6 +152,14 @@ def build_new_host_obj(misphunter, event, seed, ip):
     # Define relationship
     ref_comment = f"{ip} derived from {service} search"
     host_obj.add_reference(seed.uuid, "derived-from", comment=ref_comment)
+
+    if 'new_hosts' not in misphunter.run_stats:
+        misphunter.run_stats['new_hosts'] = {str(event.id) : [ip]}
+    elif str(event.id) not in misphunter.run_stats['new_hosts']:
+        misphunter.run_stats['new_hosts'][str(event.id)] = [ip]
+    else:
+        misphunter.run_stats['new_hosts'][str(event.id)].append(ip)
+
     return host_obj
 
 def check_all_certs(misphunter, cert, event):
@@ -173,7 +196,7 @@ def check_all_certs(misphunter, cert, event):
     if cert_data:
         if str(cert_data.event_id)!=str(event.id):
             _log.info(f"Found existing cert object {cert_data.uuid} from a different event. Cloning object for this event!")
-            cert_data = clone_obj(cert_data, event)
+            cert_data = clone_obj(misphunter, cert_data, event)
     
     return cert_data
 
@@ -300,7 +323,7 @@ def check_timer(misphunter, seed):
 
     return seed
 
-def clone_obj(source_obj, event):
+def clone_obj(misphunter, source_obj, event):
     if str(source_obj.event_id) == str(event.id):
         _log.info(f"Object {source_obj.uuid} does not need to be cloned because it already exists in this event.")
         _log.error(f"THIS IS LEGACY CODE")
@@ -318,6 +341,14 @@ def clone_obj(source_obj, event):
         attr.event_id = event.id
         update_timestamps(attr)
     clone.is_new=True
+
+    if 'new_clones' not in misphunter.run_stats:
+        misphunter.run_stats['new_clones'] = {str(event.id) : [clone.uuid]}
+    elif str(event.id) not in misphunter.run_stats['new_clones']:
+        misphunter.run_stats['new_clones'][str(event.id)] = [clone.uuid]
+    else:
+        misphunter.run_stats['new_clones'][str(event.id)].append(clone.uuid)
+
     return clone
 
 def get_all_attrs_by_rel(obj, rel):
@@ -600,7 +631,7 @@ def search_recent_updated_objects(misphunter, event, seed, value=""):
         if str(newest_obj.event_id) != str(event.id):
             _log.info(f"Most-recently updated object is from a different event - [{newest_obj.event_id} vs {event.id}]")
             _log.info(f"Cloning latest version of object {newest_obj.uuid} for adding to into event {event.id}")
-            newest_obj = clone_obj(newest_obj, event)
+            newest_obj = clone_obj(misphunter, newest_obj, event)
         else:
             newest_obj.is_new=False
 
