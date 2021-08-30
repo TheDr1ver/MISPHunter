@@ -158,17 +158,18 @@ def check_json_freshness(misphunter, host_obj, service):
     _log.info(f"First checking to see if we have an existing json blob new enough to avoid using an API query.")
     json_type = f"{service}-json"
     last_json = get_latest_attr_by_rel(host_obj, json_type)
+    threshold_timestamp = int(time()) - (int(misphunter.update_threshold) * 60 * 60)
     if last_json:
         _log.info(f"{last_json.value} found of type {json_type}. Checking to see if it's new enough...")
-        if int(last_json.last_seen.timestamp()) >= int(misphunter.update_threshold):
-            _log.info(f"JSON timestamp of {int(last_json.last_seen.timestamp())} > {misphunter.update_threshold} hours ago."
+        if int(last_json.last_seen.timestamp()) >= int(threshold_timestamp):
+            _log.info(f"JSON timestamp of {int(last_json.last_seen.timestamp())} > {misphunter.update_threshold} hours ago ({int(threshold_timestamp)})."
                 "good enough to reuse!")
 
             if not hasattr(host_obj, 'is_new'):
                 host_obj.is_new = False
 
             if not host_obj.is_new:
-                _log.warning(f"attempting to read {last_json.value}...")
+                _log.debug(f"attempting to read {last_json.value}...")
                 if not last_json.data:
                     _log.warning(f"Data missing from {last_json.value}... Trying some magic.")
                     last_json = misphunter.misp.get_attribute(last_json, pythonify=True)
@@ -192,7 +193,7 @@ def check_json_freshness(misphunter, host_obj, service):
                 return False
         else:
             _log.info(f"It had a timestamp of {int(last_json.last_seen.timestamp())} and we wanted it to be > "
-                f"{misphunter.update_threshold}. Getting fresh JSON blob.")
+                f"{misphunter.update_threshold} hrs ago ({int(threshold_timestamp)}). Getting fresh JSON blob for comparison.")
             return False
     else:
         return False

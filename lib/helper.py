@@ -768,7 +768,7 @@ def search_cert_data(misphunter, cert_hash, host_obj, event):
                     return cert_data 
 
                 comment=f"Certificate was seen on {host_ip}"
-                _log.debug(f"Adding object reference between {host_obj.uuid} and {cert_data.uuid}: {comment}")
+                _log.info(f"Adding object reference between {host_obj.uuid} and {cert_data.uuid}: {comment}")
                 cert_data.add_reference(host_obj.uuid, "derived-from", comment=comment)
 
                 return cert_data
