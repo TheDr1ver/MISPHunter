@@ -62,6 +62,21 @@ def add_json_attr(checksum, raw_sorted_json_text, host_obj, json_type, comment="
     
     return host_obj
 
+def blacklist_check_cert(misphunter, cert):
+    _log.debug(f"Checking misphunter-cert object {cert.uuid} to determine if it should be blacklisted.")
+    cert_ips = cert.get_attributes_by_relation('cert-ip')
+    sha256 = misphandler.get_attr_val_by_rel(cert, 'cert-sha256')
+    if len(cert_ips) <= 1:
+        blacklist_attr = misphandler.get_attr_obj_by_rel(cert, 'blacklisted')
+        if int(blacklist_attr.value) == 0:
+            _log.info(f"Cert {sha256} - {cert.uuid} only had {len(cert_ips)} IPs associated with it." 
+                " Blacklisting cert from future pivots!")
+            blacklist_attr.value = 1
+            cert = misphandler.update_existing_object(misphunter, cert)
+    else:
+        _log.debug(f"Cert {sha256} - {cert.uuid} had {len(cert_ips)} IPs associated with it. Leaving blacklist val alone!")
+    return cert
+
 def build_misphunter_cert(misphunter, cert, parent_obj, event, raw_data):
     
     parsed_data = raw_data['parsed']

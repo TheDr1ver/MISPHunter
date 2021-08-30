@@ -60,6 +60,7 @@ class MISPHunter():
             self.shodan_api_counter = 0
 
             self.ignored_json_keys = {}
+            self.run_stats = {}
             
             self.logger.info("\n\nLoaded configs okay...")
             
