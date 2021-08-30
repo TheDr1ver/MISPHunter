@@ -161,4 +161,9 @@ class MISPHunter():
         self.logger.info(f"\n\nTOTAL CENSYS API CALLS: {self.censys_v2_api_counter}\n"
             f"TOTAL SHODAN API CALLS: {self.shodan_api_counter}\n"
             f"TOTAL OVERALL EXTERNAL API CALLS: {total_api}\n\n")
+        self.logger.info(f"Other stats:")
+        for k, v in self.run_stats.items():
+            self.logger.info(f"{k}:")
+            self.logger.info(f"    {pformat(v)}")
+        # self.logger.info({pformat(self.run_stats)})
         self.logger.info("DONE!")
