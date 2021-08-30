@@ -208,5 +208,5 @@ if __name__ == "__main__":
             sleep(one_hour+1)
         else:
             time_remaining = (one_hour+1) - seconds_passed
-            mh.logger.info(f"Only {seconds_passed} seconds have passed since the last time we ran MISPsrvtrkr. Sleeping for remaining {time_remaining} seconds.")
+            mh.logger.info(f"Only {seconds_passed} seconds have passed since the last time we ran MISPHunter. Sleeping for remaining {time_remaining} seconds.")
             sleep(time_remaining)
