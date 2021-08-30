@@ -123,6 +123,10 @@ class MISPHunter():
         # Loop through events one at a time
         for event_id, seeds in all_event_seeds.items():
             event = misphandler.get_event(self, event_id)
+            self.logger.info(f"\n###############################################################################\n\n# "
+                f"PROCESSING EVENT ID {event_id}\n# "
+                f"{event.info}"
+                f"\n###############################################################################\n\n")
             misphandler.get_event_hosts(self, event)
             # Above sets global lists of MISPObjects like misphunter.event_hosts = [event_hosts]
             misphandler.get_event_seeds(self, event)
@@ -150,6 +154,7 @@ class MISPHunter():
             # TODO
             # Finally, set blacklisted=1 for objects that have a crappy return (e.g. certs with only 1 assoc. host)
             #   or dns/domain objects that are clearly shared hosts
+            event = huntlogic.auto_blacklist(self, event)
 
         total_api = self.censys_v2_api_counter + self.shodan_api_counter
         self.logger.info(f"\n\nTOTAL CENSYS API CALLS: {self.censys_v2_api_counter}\n"

@@ -25,6 +25,29 @@ def get_logger():
 
 _log = get_logger()
 
+def auto_blacklist(misphunter, event):
+    
+    _log.debug(f"Determining if any objects should be automatically blacklisted based on their pivot results.")
+    all_certs = event.get_objects_by_name('misphunter-cert')
+    for cert in all_certs:
+        cert = blacklist_check_cert(misphunter, cert)
+    return event
+
+def blacklist_check_cert(misphunter, cert):
+    _log.debug(f"Checking misphunter-cert object {cert.uuid} to determine if it should be blacklisted.")
+    cert_ips = cert.get_attributes_by_relation('cert-ip')
+    sha256 = misphandler.get_attr_val_by_rel(cert, 'cert-sha256')
+    if len(cert_ips) <= 1:
+        blacklist_attr = misphandler.get_attr_obj_by_rel(cert, 'blacklisted')
+        if int(blacklist_attr.value) == 0:
+            _log.info(f"Cert {sha256} - {cert.uuid} only had {len(cert_ips)} IPs associated with it." 
+                " Blacklisting cert from future pivots!")
+            blacklist_attr.value = 1
+            cert = misphandler.update_existing_object(misphunter, cert)
+    else:
+        _log.debug(f"Cert {sha256} - {cert.uuid} had {len(cert_ips)} IPs associated with it. Leaving blacklist val alone!")
+    return cert
+
 def cert_pivot(misphunter, host_obj, event, seed):
 
     host_ip = misphandler.get_attr_val_by_rel(host_obj, 'host-ip')
@@ -63,6 +86,11 @@ def cert_pivot(misphunter, host_obj, event, seed):
         # Check cert_data timestamp - if less than update threshold, update IPs.
         update_ips = helper.check_update_threshold(misphunter, cert_data)
         if update_ips or new_cert_obj:
+            if update_ips:
+                _log.debug(f"check_update_threshold() returned True - searching again for IPs!")
+            if new_cert_obj:
+                _log.debug(f"new_cert_obj is set to True, which means this cert is new to this event, which means "
+                    "we're once again searching for related IPs!")
             # Find IPs associated with this cert
             cert_data = helper.search_cert_hosts(misphunter, cert_data, host_ip)
 
