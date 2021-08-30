@@ -739,6 +739,9 @@ def search_cert_data(misphunter, cert_hash, host_obj, event):
     #   Also of note, at the moment, censys-v1 is the only censys option.
     if misphunter.censys_v1_active:
         cert_data = censys.censys_v1_search_cert_data(misphunter, cert_hash, event)
+        if 'error_type' in cert_data:
+            _log.error(f"Received error from Censys instead of certificate data: {cert_data['error']}")
+            return False
         if cert_data:
             _log.debug(f"Results found when running search_cert_data for cert_hash {cert_hash}")
 

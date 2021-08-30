@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime
 from io import BytesIO
 from pprint import pformat
-from time import time
+from time import time, sleep
 
 from pymisp import MISPObject
 
@@ -669,6 +669,18 @@ def update_event(misphunter, event):
             
     except Exception as e:
         _log.error(f"Error updating event {event.id} : {e}")
+        _log.warning(f"If it fails again it will be FATAL!")
+        _log.error(f"Sleeping for a couple seconds and trying again...")
+        sleep(2)
+        try:
+            updated_event = misphunter.misp.update_event(event, pythonify=True)
+            if not isinstance(updated_event, dict):
+                _log.info(f"Successfully updated event {updated_event.id}")
+            else:
+                _log.info(f"FAILED running misp.update_event: {updated_event}")
+        except Exception as e:
+            _log.error(f"FATAL Error updating event {event.id}: {e}")
+            raise
     
     # Update the global "existing lists" every time there's a successful update
     if updated_event:
