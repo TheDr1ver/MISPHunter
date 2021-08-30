@@ -1,0 +1,16 @@
+[Unit]
+Description=MISPHunter
+After=misphunter.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/MISPHunter
+Environment=PATH=/var/www/MISP/venv/bin/
+ExecStart=/var/www/MISP/venv/bin/python /opt/MISPHunter/misphunter.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

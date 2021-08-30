@@ -1,6 +1,6 @@
 import configparser
 from pprint import pformat
-from time import time
+from time import time, sleep
 import urllib3
 
 from pymisp import PyMISP
@@ -167,3 +167,46 @@ class MISPHunter():
             self.logger.info(f"    {pformat(v)}")
         # self.logger.info({pformat(self.run_stats)})
         self.logger.info("DONE!")
+
+if __name__ == "__main__":
+    mh = MISPHunter()
+
+    mh.debugging = False
+    mh.force_ioc_extract = False
+    mh.update_misp = True
+
+    mh.do_it_live = True
+    mh.ignore_timers = False
+    mh.update_threshold = 24
+    mh.cert_pivoting = True
+    mh.cert_pivot_threshold = 10
+
+    # mh.run()
+
+    while True:
+        chk_file = "./misphunter_chkpt.txt"
+        try:
+            checkpoint = open(chk_file)
+            chk = checkpoint.readline()
+            checkpoint.close()
+        except:
+            chk = 0
+        
+        end_sec = time()
+        end_sec_int = int(end_sec)
+        one_hour = 60 * 60
+        one_day = one_hour * 24
+        two_day = one_day * 2
+        seconds_passed = end_sec_int-int(chk)
+        if seconds_passed >= one_hour:
+            mh.run()
+            mh.logger.info(f"Saving new checkpoint of {end_sec}.")
+            f = open(chk_file,'w')
+            new_checkpoint = str(int(end_sec)+1)
+            f.write(new_checkpoint)
+            f.close()
+            sleep(one_hour+1)
+        else:
+            time_remaining = (one_hour+1) - seconds_passed
+            mh.logger.info(f"Only {seconds_passed} seconds have passed since the last time we ran MISPsrvtrkr. Sleeping for remaining {time_remaining} seconds.")
+            sleep(time_remaining)
