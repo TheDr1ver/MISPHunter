@@ -63,7 +63,7 @@ def add_json_attr(checksum, raw_sorted_json_text, host_obj, json_type, comment="
     return host_obj
 
 def blacklist_check_cert(misphunter, cert):
-    _log.debug(f"Checking misphunter-cert object {cert.uuid} to determine if it should be blacklisted.")
+    # _log.debug(f"Checking misphunter-cert object {cert.uuid} to determine if it should be blacklisted.")
     cert_ips = cert.get_attributes_by_relation('cert-ip')
     sha256 = get_attr_val_by_rel(cert, 'cert-sha256')
     if len(cert_ips) <= 1:
