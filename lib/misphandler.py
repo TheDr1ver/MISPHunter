@@ -137,8 +137,13 @@ def check_all_certs(misphunter, cert, event):
 
     _log.debug(f"Found {len(all_cert_data)} certs matching value {cert}.")
 
+    event_cert_uuids = []
+    for event_cert in misphunter.event_certs:
+        if event_cert.uuid not in event_cert_uuids:
+            event_cert_uuids.append(event_cert.uuid)
+
     for obj in all_cert_data:
-        if obj in misphunter.event_certs:
+        if obj.uuid in event_cert_uuids:
             _log.info(f"Found a cert object that already lives in this exact event, so that's the one we'll use: {obj.uuid}")
             cert_data = obj
             break
@@ -185,6 +190,7 @@ def check_json_freshness(misphunter, host_obj, service):
                 try:
                     raw = json.loads(json_str)
                 except Exception as e:
+                    _log.error(f"Error attempting to load json: {e}")
                     _log.error(f"Something went wrong attempting to read {last_json.value}. Skipping re-use and "
                         "just going to hit the API again.")
                     return False

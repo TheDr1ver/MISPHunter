@@ -147,6 +147,7 @@ def check_update_threshold(misphunter, obj):
         _log.debug(f"YES! It has been {diff_hours} since {obj.uuid} has been updated!")
         return True
     else:
+        _log.debug(f"NO! It has ONLY been {diff_hours} since {obj.uuid} has been updated!")
         return False
 
 def clean_junk_domains(domains, context, cleanup, misp):
