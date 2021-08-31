@@ -551,7 +551,7 @@ def get_local_blocks(misphunter, event):
                 if len(hosts) > 0:
                     host = hosts[0].value
                     if host not in local_blocks:
-                        local_blocks.append(attr.value)
+                        local_blocks.append(host)
 
     return local_blocks
 

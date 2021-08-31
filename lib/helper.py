@@ -143,11 +143,12 @@ def check_update_threshold(misphunter, obj):
     obj_time = int(obj.timestamp.timestamp())
     diff_secs = min_time - obj_time
     diff_hours = diff_secs / 60 / 60
-    if obj_time < min_time:
-        _log.debug(f"YES! It has been {diff_hours} since {obj.uuid} has been updated!")
+    # if obj_time < min_time:
+    if diff_hours >= min_hours:
+        _log.debug(f"YES! It has been {diff_hours} hours since {obj.uuid} has been updated! min_time: {min_time} obj_time: {obj_time}")
         return True
     else:
-        _log.debug(f"NO! It has ONLY been {diff_hours} since {obj.uuid} has been updated!")
+        _log.debug(f"NO! It has ONLY been {diff_hours} hours since {obj.uuid} has been updated! min_time: {min_time} obj_time: {obj_time}")
         return False
 
 def clean_junk_domains(domains, context, cleanup, misp):
