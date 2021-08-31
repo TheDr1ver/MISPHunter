@@ -43,12 +43,15 @@ def add_ips_to_cert_obj(cert_data, ips):
                 update_timestamps(ip)
     # If any of the IPs we found weren't already in this misphunter-cert object
     # add them, with a comment of where we found them.
+    added_ips = []
     for hunt_type, ips in ips.items():
         for ip in ips:
             if ip not in existing_ips:
-                comment=f"{ip} discovered via {hunt_type} search for associated hosts."
-                attr = cert_data.add_attribute('cert-ip', ip, type='ip-dst', comment=comment, disable_correlation=False, to_ids=False, pythonify=True)
-                update_timestamps(attr)
+                if ip not in added_ips:
+                    added_ips.append(ip)
+                    comment=f"{ip} discovered via {hunt_type} search for associated hosts."
+                    attr = cert_data.add_attribute('cert-ip', ip, type='ip-dst', comment=comment, disable_correlation=False, to_ids=False, pythonify=True)
+                    update_timestamps(attr)
     return cert_data
 
 def add_json_attr(checksum, raw_sorted_json_text, host_obj, json_type, comment=""):
