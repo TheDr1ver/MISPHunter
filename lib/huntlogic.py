@@ -62,6 +62,12 @@ def cert_pivot(misphunter, host_obj, event, seed):
             _log.error(f"Something went wrong attempting to get certificate data. Skipping cert {cert_hash} entirely!")
             continue
 
+        # check if this cert is blacklisted
+        blacklisted = misphandler.get_attr_val_by_rel(cert_data, 'blacklisted')
+        if int(blacklisted) == 1:
+            _log.info(f"misphunter-cert {cert_hash} [{cert_data.uuid}] is marked as blacklisted. Skipping!")
+            continue
+
         # Check if this cert object is new to this event or not
         for existing_obj in misphunter.event_certs:
             if cert_data.uuid == existing_obj.uuid:
