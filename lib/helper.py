@@ -778,6 +778,10 @@ def search_cert_data(misphunter, cert_hash, host_obj, event):
                 _log.info(f"Adding object reference between {host_obj.uuid} and {cert_data.uuid}: {comment}")
                 cert_data.add_reference(host_obj.uuid, "derived-from", comment=comment)
 
+                # Update timestamps
+                for attr in cert_data.Attribute:
+                    misphandler.update_timestamps(attr)
+
                 return cert_data
 
             # Otherwise, cert_data came back as a raw response from Censys
