@@ -41,6 +41,12 @@
             "misp-attribute": "text",
             "disable_correlation": true,
             "ui-priority": 0
+        },
+        "found-host": {
+            "description": "Host that was discovered using this search.",
+            "misp-attribute": "ip-dst",
+            "disable_correlation": false,
+            "ui-priority": 0
         }
     },
     "description": "Object holds the raw searches that populate the rest of the event. This should be the first thing you make for a misphunter event.",
@@ -52,5 +58,5 @@
         "enabled"
     ],
     "uuid": "a891fc40-fad2-11eb-a495-000d3a98c781",
-    "version": 2
+    "version": 3
 }

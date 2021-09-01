@@ -149,10 +149,9 @@ class MISPHunter():
             # TODO
             # Second, process all enabled misphunter objects for this event that were not touched after process_seeds()
 
-            # TODO
             # Third, run relationships/relationship checks against all objects in the event.
+            event = huntlogic.process_relationships(self, event)
 
-            # TODO
             # Finally, set blacklisted=1 for objects that have a crappy return (e.g. certs with only 1 assoc. host)
             #   or dns/domain objects that are clearly shared hosts
             event = huntlogic.auto_blacklist(self, event)

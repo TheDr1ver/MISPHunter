@@ -193,6 +193,33 @@ def process_seeds(misphunter, seeds, event):
                     _log.error(f"No IPs were found running {seed_service} search {seed_search}.Skipping seed!")
                     continue
                 else:
+                    new_ip_found = False
+                    # Add all found IPs to seed first
+                    _log.debug(f"Found {len(ips)} IPs while searching {seed_service} with seed {seed.uuid}!")
+                    seed_found_ips = []
+                    seed_ip_attrs = misphandler.get_all_attrs_by_rel(seed, 'found-host')
+                    for attr in seed_ip_attrs:
+                        if attr.value not in seed_found_ips:
+                            seed_found_ips.append(attr.value)
+                    for ip in ips:
+                        if ip not in seed_found_ips:
+                            seed_found_ips.append(ip)
+                            _log.info(f"Adding found IP {ip} to seed object {seed.uuid}.")
+                            new_ip_found = seed.add_attribute('found-host', ip, type='ip-dst', disable_correlation=False, to_ids=False, pythonify=True)
+
+                    if new_ip_found:
+                        updated_seed = misphandler.update_existing_object(misphunter, seed)
+                        if not updated_seed:
+                            _log.error(f"Error attempting to update seed object {seed.uuid} with new found-ips {ips}.")
+                        else:
+                            seed = updated_seed
+                            updated_event = misphandler.get_event(misphunter, seed.event_id)
+                            if updated_event:
+                                _log.debug(f"Successfully grabbed event {seed.event_id}.")
+                                event = updated_event
+                            else:
+                                _log.error(f"Attempting to get event after adding found-hosts to seed {seed.uuid} failed.")
+
                     updated_event = process_hosts(misphunter, event, seed, ips)
                     if updated_event:
                         event = updated_event
@@ -296,4 +323,16 @@ def process_hosts(misphunter, event, seed, ips):
             else:
                 event = updated_event
 
+    return event
+
+def process_relationships(misphunter, event):
+    # Organize events into rel_index so it's easier to process relationships
+    _log.info(f"Processing relationships for event [{event.id}] - {event.info}")
+    rel_index = helper.organize_event_objects(event)
+    # Relate certs to IPs they were found on
+    rel_index = helper.build_cert_host_rels(event, rel_index)
+    # Relate seeds to hosts those seeds discovered
+    rel_index = helper.build_seed_host_rels(event, rel_index)
+    # Update the event to finalize the relationships
+    event = misphandler.update_event(misphunter, event)
     return event
