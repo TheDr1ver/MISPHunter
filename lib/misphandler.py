@@ -119,8 +119,8 @@ def build_misphunter_cert(misphunter, cert, parent_obj, event, raw_data):
             cert_obj.add_attribute('cert-domain', domain, type="domain", disable_correlation=False, to_ids=False, pythonify=True)
 
     # Add relationship
-    comment=f"Certificate was seen on {ip}"
-    cert_obj.add_reference(parent_obj.uuid, "derived-from", comment=comment)
+    # comment=f"Certificate was seen on {ip}"
+    # cert_obj.add_reference(parent_obj.uuid, "derived-from", comment=comment)
 
     sha256 = parsed_data['fingerprint_sha256']
     if 'new_certs' not in misphunter.run_stats:
@@ -153,8 +153,8 @@ def build_new_host_obj(misphunter, event, seed, ip):
     for attr in host_obj.Attribute:
         update_timestamps(attr)
     # Define relationship
-    ref_comment = f"{ip} derived from {service} search"
-    host_obj.add_reference(seed.uuid, "derived-from", comment=ref_comment)
+    # ref_comment = f"{ip} derived from {service} search"
+    # host_obj.add_reference(seed.uuid, "derived-from", comment=ref_comment)
 
     if 'new_hosts' not in misphunter.run_stats:
         misphunter.run_stats['new_hosts'] = {str(event.id) : [ip]}
@@ -502,10 +502,12 @@ def get_host_obj(misphunter, event, seed, ip):
         _log.info(f"No existing object found server-wide. Building new host_obj.")
         host_obj = build_new_host_obj(misphunter, event, seed, ip)
     else:
+        '''
         if existing_obj.is_new:
             service = get_attr_val_by_rel(seed, 'service')
             ref_comment = f"{ip} derived from {service} search"
             existing_obj.add_reference(seed.uuid, "derived-from", comment=ref_comment)
+        '''
         return existing_obj
             
     return host_obj

@@ -124,6 +124,100 @@ def add_iocs_to_object(iocs, checksum, host_obj):
 
     return host_obj
 
+def build_cert_host_rels(event, rel_index):
+    # rel_index = {
+    #     'used-by' : {
+    #         'abcd-abcd-abcd-abcd': ['wxyz-wxyz-wxyz-wxyz']
+    #      },
+    #     'all_hosts': {
+    #         '192.168.1.1': [fedg-fedg-fedg-fedg]
+    #      },
+    #     'all_certs': {
+    #         'asdfasdfasdfasdfasdf': [degf-degf-degf-degf]
+    #      },
+    # }
+    # 
+    _log.info(f"Building cert -> host relationships...")
+    num_certs = 0
+    num_new_rels = 0
+    num_existing_rels = 0
+    for obj in event.Object:
+        if obj.name == "misphunter-cert":
+            num_certs += 1
+            sha256 = misphandler.get_attr_val_by_rel(obj, 'cert-sha256')
+            cert_uuid = obj.uuid
+            related_ips = misphandler.get_all_attrs_by_rel(obj, 'cert-ip')
+            for attr in related_ips:
+                ip = attr.value
+                if ip in rel_index['all_hosts']:
+                    host_uuid = rel_index['all_hosts'][ip]
+                    if 'used-by' not in rel_index:
+                        _log.debug(f"Found no relationships in event {event.id} where 'used-by' was a relationship_type.")
+                        ref = obj.add_reference(host_uuid, 'used-by')
+                        num_new_rels += 1
+                        _log.debug(f"Adding relationship - host {ip} [{host_uuid}] used by cert {sha256} [{cert_uuid}].")
+                        # rel_index['used-by'] = {host_uuid : [cert_uuid]}
+                        rel_index['used-by'] = {cert_uuid : [host_uuid]}
+                    # elif host_uuid not in rel_index['used-by']:
+                    elif cert_uuid not in rel_index['used-by']:
+                        ref = obj.add_reference(host_uuid, 'used-by')
+                        num_new_rels += 1
+                        _log.debug(f"Adding relationship - host {ip} [{host_uuid}] used by cert {sha256} [{cert_uuid}].")
+                        # rel_index['used-by'][host_uuid] = [cert_uuid]
+                        rel_index['used-by'][cert_uuid] = [host_uuid]
+                    # elif cert_uuid not in rel_index['used-by'][host_uuid]:
+                    elif host_uuid not in rel_index['used-by'][cert_uuid]:
+                        ref = obj.add_reference(host_uuid, 'used-by')
+                        num_new_rels += 1
+                        _log.debug(f"Adding relationship - host {ip} [{host_uuid}] used by cert {sha256} [{cert_uuid}].")
+                        # rel_index['used-by'][host_uuid].append(cert_uuid)
+                        rel_index['used-by'][cert_uuid].append(host_uuid)
+                    else:
+                        num_existing_rels += 1
+                        # _log.debug(f"Relationship between host {ip} [{host_uuid}] and cert {sha256} [{cert_uuid}] already exists!")
+    # _log.debug(f"rel_index['used-by']:")
+    # _log.debug(f"{pformat(rel_index['used-by'])}")
+    # _log.debug(f"\n\nrel_index:\n\n")
+    # _log.debug(f"{pformat(rel_index)}")
+    _log.info("Found {num_certs} seeds in this event with {num_existing_rels} existing relationships. Added {num_new_rels} new relationships!")
+    return rel_index
+
+def build_seed_host_rels(event, rel_index):
+    _log.info(f"Building seed -> host relationships...")
+    num_seeds = 0
+    num_new_rels = 0
+    num_existing_rels = 0
+    for obj in event.Object:
+        if obj.name == "misphunter-seed":
+            num_seeds += 1
+            seed_uuid = obj.uuid
+            related_ips = misphandler.get_all_attrs_by_rel(obj, 'found-host')
+            for attr in related_ips:
+                ip = attr.value
+                if ip in rel_index['all_hosts']:
+                    host_uuid = rel_index['all_hosts'][ip]
+                    if 'query-returned' not in rel_index:
+                        _log.debug(f"Found no relationships in event {event.id} where 'query-returned' was a relationship_type.")
+                        ref = obj.add_reference(host_uuid, 'query-returned')
+                        num_new_rels += 1
+                        _log.debug(f"Adding relationship - host {ip} [{host_uuid}] found by seed [{seed_uuid}]")
+                        rel_index['query-returned'] = {seed_uuid : [host_uuid]}
+                    elif seed_uuid not in rel_index['query-returned']:
+                        ref = obj.add_reference(host_uuid, 'query-returned')
+                        num_new_rels += 1
+                        _log.debug(f"Adding relationship - host {ip} [{host_uuid}] found by seed [{seed_uuid}]")
+                        rel_index['query-returned'][seed_uuid] = [host_uuid]
+                    elif host_uuid not in rel_index['query-returned'][seed_uuid]:
+                        ref = obj.add_reference(host_uuid, 'query-returned')
+                        num_new_rels += 1
+                        _log.debug(f"Adding relationship - host {ip} [{host_uuid}] found by seed [{seed_uuid}]")
+                        rel_index['query-returned'][seed_uuid].append(host_uuid)
+                    else:
+                        num_existing_rels += 1
+                        # _log.debug(f"Relationship between host {ip} [{host_uuid}] and seed [{seed_uuid}] already exists!")
+    _log.info("Found {num_seeds} seeds in this event with {num_existing_rels} existing relationships. Added {num_new_rels} new relationships!")
+    return rel_index
+
 def check_block(misphunter, ip, blocks):
     skip = False
     for net in blocks:
@@ -643,6 +737,44 @@ def md5_data(data):
     _log.info(f"Calculated checksum of {checksum}")
     return checksum
 
+def organize_event_objects(event):
+
+    rel_index = {
+        'all_hosts': {},
+        'all_certs': {}
+    }
+    # _log.debug(f"#### ORGANIZING RELATIONSHIP INDEX ####")
+    # Organize event objects
+    for obj in event.Object:
+        if hasattr(obj, 'ObjectReference'):
+            for ref in obj.ObjectReference:
+                if ref.relationship_type not in rel_index:
+                    rel_index[ref.relationship_type] = {obj.uuid : [ref.referenced_uuid]}
+                elif obj.uuid not in rel_index[ref.relationship_type]:
+                    rel_index[ref.relationship_type][obj.uuid] = [ref.referenced_uuid]
+                else:
+                    rel_index[ref.relationship_type][obj.uuid].append(ref.referenced_uuid)
+
+        if obj.name=="misphunter-host":
+            ip = misphandler.get_attr_val_by_rel(obj, 'host-ip')
+            if not ip:
+                _log.error(f"host-ip attribute not found in misphunter-host obj {obj.uuid}. Skipping!")
+                continue
+            if ip not in rel_index['all_hosts']:
+                rel_index['all_hosts'][ip] = obj.uuid
+        if obj.name == "misphunter-cert":
+            cert = misphandler.get_attr_val_by_rel(obj, 'cert-sha256')
+            if not cert:
+                _log.error(f"cert-sha256 attribute not found in misphunter-cert obj {obj.uuid}. Skipping!")
+                continue
+            if cert not in rel_index['all_certs']:
+                rel_index['all_certs'][cert] = obj.uuid
+            
+    # _log.debug(f"#### RELATIONSHIP INDEX ORGANIZED ####")
+    # _log.debug(f"\n\nrel_index:\n\n")
+    # _log.debug(f"{pformat(rel_index)}")
+    return rel_index
+
 def parse_cert(cert_fingerprint_pattern, cert_name_pattern, iocs, new_res):
     _log.info(f"Parsing certificate for fingerprint hashes and potential domains...")
     for k, v in new_res.items():
@@ -758,13 +890,10 @@ def search_cert_data(misphunter, cert_hash, host_obj, event):
                 # Add host_obj IP to cert_obj if doesn't exist
                 cert_obj_ips = []
                 cert_ip_attrs = cert_data.get_attributes_by_relation('cert-ip')
-                for cert_ip_attr in cert_ip_attrs:
-                    if cert_ip_attr.value not in cert_obj_ips:
-                        cert_obj_ips.append(cert_ip_attr.value)
+                for attr in cert_ip_attrs:
+                    if attr.value not in cert_obj_ips:
+                        cert_obj_ips.append(attr.value)
 
-                # Add reference if object already exists.
-                # TODO - If we start getting a bunch of duplicate references between existing objects
-                #   kill all of this. Probably can be handled in reference routines at the very end.
                 host_ip = misphandler.get_attr_val_by_rel(host_obj, 'host-ip')
                 if host_ip:
                     if host_ip not in cert_obj_ips:
@@ -773,10 +902,6 @@ def search_cert_data(misphunter, cert_hash, host_obj, event):
                 else:
                     _log.error(f"ERROR - No host-ip associated with [{host_obj.uuid}]")
                     return cert_data 
-
-                comment=f"Certificate was seen on {host_ip}"
-                _log.info(f"Adding object reference between {host_obj.uuid} and {cert_data.uuid}: {comment}")
-                cert_data.add_reference(host_obj.uuid, "derived-from", comment=comment)
 
                 # Update timestamps
                 for attr in cert_data.Attribute:
