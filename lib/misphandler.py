@@ -212,7 +212,7 @@ def check_json_freshness(misphunter, host_obj, service):
         _log.info(f"{last_json.value} found of type {json_type}. Checking to see if it's new enough...")
         if int(last_json.last_seen.timestamp()) >= int(threshold_timestamp):
             _log.info(f"JSON timestamp of {int(last_json.last_seen.timestamp())} > {misphunter.update_threshold} hours ago ({int(threshold_timestamp)})."
-                "good enough to reuse!")
+                "new enough to reuse!")
 
             if not hasattr(host_obj, 'is_new'):
                 host_obj.is_new = False
