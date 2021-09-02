@@ -179,7 +179,7 @@ def build_cert_host_rels(event, rel_index):
     # _log.debug(f"{pformat(rel_index['used-by'])}")
     # _log.debug(f"\n\nrel_index:\n\n")
     # _log.debug(f"{pformat(rel_index)}")
-    _log.info("Found {num_certs} seeds in this event with {num_existing_rels} existing relationships. Added {num_new_rels} new relationships!")
+    _log.info(f"Found {num_certs} seeds in this event with {num_existing_rels} existing relationships. Added {num_new_rels} new relationships!")
     return rel_index
 
 def build_seed_host_rels(event, rel_index):
@@ -419,7 +419,10 @@ def flatten_dict(dictionary, remove_dates=False, remove_hashes=False):
 
             # NMD second attempt to fix this crap
             elif isinstance(parent_value[0], dict):
+                '''
                 # NMD third attempt to fix this crap
+                # This try/except is redundant because eventually it'll do it a second time
+                #   after sorting anyway...
                 try:
                     for value in parent_value:
                         temp2 = parent_key + '_'+str(i) 
@@ -428,6 +431,9 @@ def flatten_dict(dictionary, remove_dates=False, remove_hashes=False):
                 except Exception as e :
                     _log.error(f"Fucked again. temp {temp2} value {str(value)[0:25]}")
                     raise(e)
+                '''
+                _log.debug(f"first item in parent_value list is a dict, so we can't sort it...")
+                _log.debug(f"NOT sorting parent_value...")
                 '''
 
                 # TODO Something is severely wrong in... all of this.
@@ -486,6 +492,8 @@ def flatten_dict(dictionary, remove_dates=False, remove_hashes=False):
                 '''
             else:
                 try:
+                    _log.debug(f"parent_value is not an empty list and parent_value[0] is not a dict.")
+                    _log.debug(f"...sorting parent_value list...")
                     parent_value.sort()
                 except Exception as e:
                     _log.error(f"FATAL (for now) Error trying to sort {parent_value}")
