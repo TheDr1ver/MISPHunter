@@ -206,6 +206,7 @@ def process_seeds(misphunter, seeds, event):
                             seed_found_ips.append(ip)
                             _log.info(f"Adding found IP {ip} to seed object {seed.uuid}.")
                             new_ip_found = seed.add_attribute('found-host', ip, type='ip-dst', disable_correlation=False, to_ids=False, pythonify=True)
+                            misphandler.update_timestamps(new_ip_found)
 
                     if new_ip_found:
                         updated_seed = misphandler.update_existing_object(misphunter, seed)

@@ -215,7 +215,7 @@ def build_seed_host_rels(event, rel_index):
                     else:
                         num_existing_rels += 1
                         # _log.debug(f"Relationship between host {ip} [{host_uuid}] and seed [{seed_uuid}] already exists!")
-    _log.info("Found {num_seeds} seeds in this event with {num_existing_rels} existing relationships. Added {num_new_rels} new relationships!")
+    _log.info(f"Found {num_seeds} seeds in this event with {num_existing_rels} existing relationships. Added {num_new_rels} new relationships!")
     return rel_index
 
 def check_block(misphunter, ip, blocks):
@@ -1077,9 +1077,11 @@ def sort_json(unsorted_json):
 def sort_raw_json(misphunter, raw, hunt):
     flat_unsorted_json = flatten_data(misphunter, raw)    
     unsorted_json = clean_keys(misphunter, flat_unsorted_json, hunt)
-    _log.debug(f"\n\nAfter running helper.clean_keys, unsorted_json:\n\n{unsorted_json}\n\n")
-    sorted_json = sort_json(unsorted_json)
+    # _log.debug(f"\n\nAfter running helper.clean_keys, unsorted_json:\n\n{unsorted_json}\n\n")
+    unsorted_json_key_swap = swap_json_keys(unsorted_json)
+    sorted_json = sort_json(unsorted_json_key_swap)
     # _log.debug(f"\n\nsorted_json:\n\n{sorted_json}\n\n")
+    
     raw_sorted_json_text = get_raw_json_text(sorted_json)
     _log.debug(f"\n\nraw_sorted_json_text:\n\n{raw_sorted_json_text}\n\n")
     return raw_sorted_json_text
@@ -1118,3 +1120,31 @@ def sub_dates(s, do_remove=True):
     except Exception as err:
         pass
     return s
+
+def swap_json_keys(unsorted_json):
+    # replace things like services_0_port and data_0_port with 80_port
+    _log.debug(f"Swapping generic keys with port numbers...")
+    swap_keys = {}
+    for k, v in unsorted_json.items():
+        if k.endswith("_port"):
+            # _log.debug(f"Found key ending in _port: {k}. Has value of {v}")
+            key_port = str(v)
+            swap_key_match = re.match(r"^(.*?)_port$", k)
+            swap_key = str(swap_key_match[1])
+            # _log.debug(f"swap_key value is: {swap_key}")
+            if swap_key not in swap_keys:
+                swap_keys[swap_key] = key_port
+
+    # _log.debug(f"Keys to swap out: ")
+    # _log.debug(f"{pformat(swap_keys)}")
+
+    new_dict = {}
+
+    for k, v in unsorted_json.items():
+        for swap_key, key_port in swap_keys.items():
+            if swap_key in k:
+                # _log.debug(f"Replacing swap_key {swap_key} with key_port {key_port}...")
+                new_k = k.replace(swap_key, key_port)
+                new_dict[new_k] = v
+
+    return new_dict
