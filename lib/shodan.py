@@ -100,9 +100,13 @@ def shodan_clean_json_keys():
     # across time. e.g. when taking the hash of two blobs of censys data, the
     # hash would change if they both had different time_scraped values. So we
     # want to remove those before the comparison.
+    # Looks for keys that END WITH the follow values
     ignored_keys = [
         "timestamp",
         "_shodan",
+        "_shodan_crawler",
+        "_shodan_module",
+        "_shodan_ptr",
         "last_update",
         "_id"
     ]
