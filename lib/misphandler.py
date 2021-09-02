@@ -618,7 +618,8 @@ def search_recent_updated_objects(misphunter, event, seed, value=""):
     '''
     elif service in misphunter.dns_seed_services:
         try:
-            misphunter_dnses = misphunter.misp.search(controller="objects", object_name="misphunter-dns", value=value, timestamp=min_epoch, with_attachments=True, pythonify=True)
+            misphunter_dnses = misphunter.misp.search(controller="objects", object_name="misphunter-dns", 
+                value=value, timestamp=min_epoch, with_attachments=True, pythonify=True)
         except Exception as e:
             _log.error(f"Something went wrong trying to get misphunter-dns objects server-wide: {e}")
             return False
@@ -637,6 +638,9 @@ def search_recent_updated_objects(misphunter, event, seed, value=""):
             _log.info(f"Most-recently updated object is from a different event - [{newest_obj.event_id} vs {event.id}]")
             _log.info(f"Cloning latest version of object {newest_obj.uuid} for adding to into event {event.id}")
             newest_obj = clone_obj(misphunter, newest_obj, event)
+            host_attr = get_attr_obj_by_rel(newest_obj, 'host-ip')
+            epoch = int(time())
+            host_attr.first_seen = epoch-2
         else:
             newest_obj.is_new=False
 

@@ -107,6 +107,7 @@ def shodan_clean_json_keys():
         "_shodan_crawler",
         "_shodan_module",
         "_shodan_ptr",
+        "_shodan_options_scan",
         "last_update",
         "_id"
     ]
