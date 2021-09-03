@@ -2,6 +2,7 @@ import logging, logging.handlers
 import sys
 
 from pprint import pformat
+from time import time
 
 from . import helper, misphandler
 
@@ -207,6 +208,8 @@ def process_seeds(misphunter, seeds, event):
                             _log.info(f"Adding found IP {ip} to seed object {seed.uuid}.")
                             new_ip_found = seed.add_attribute('found-host', ip, type='ip-dst', disable_correlation=False, to_ids=False, pythonify=True)
                             misphandler.update_timestamps(new_ip_found)
+                        else:
+                            misphandler.update_timestamps(new_ip_found)
 
                     if new_ip_found:
                         updated_seed = misphandler.update_existing_object(misphunter, seed)
@@ -325,6 +328,93 @@ def process_hosts(misphunter, event, seed, ips):
                 event = updated_event
 
     return event
+
+def process_new_tags(misphunter, event):
+
+    _log.info(f"Tagging new discoveries and untagging old ones.")
+
+    tag_dict = {
+        "ip": "misphunter:new-discovery=\"host\"",
+        "domain": "misphunter:new-discovery=\"domain\"",
+        "x509": "misphunter:new-discovery=\"certificate\"",
+        "sha256": "misphunter:new-discovery=\"malware\"",
+        "url": "misphunter:new-discovery=\"url\"",
+        "whois": "misphunter:new-discovery=\"whois-record\""
+    }
+
+    new_tags = []
+
+    new_time = int(time()) - (int(misphunter.new_discovery_threshold) * 60 * 60)
+
+    for obj in event.Object:
+        for attr in obj.Attribute:
+            # If first_seen isn't set we don't know how new this really is. 
+            # Ignore it.
+            if not hasattr(attr, 'first_seen'):
+                continue
+
+            # If this isn't something we're supposed to tag (like a comment or 
+            # attachment), ignore it.
+            attr_type = attr.type
+            attr_type_part = attr_type.split("-")[0]
+            if attr_type_part not in tag_dict:
+                continue
+
+            attr_tags = misphandler.check_tags(attr)
+            first_seen = int(attr.first_seen.timestamp())
+            if first_seen >= new_time:
+
+                _log.info(f"Found attribute created within the last "
+                    f"{misphunter.new_discovery_threshold} hours! - {attr.value}\n\t"
+                    f"first_seen: {first_seen} 24hrs ago: {new_time}")
+
+                tag = tag_dict[attr_type_part]
+
+                # if this tag exists already for this attribute, no need to 
+                # tag it again.
+                if tag not in attr_tags:
+                    misphandler.tag(misphunter, attr, tag)
+                    # Track stats
+                    helper.track_stats_tags_added(misphunter, tag, attr)
+                else:
+                    _log.debug(f"Attribute {attr.uuid} is new, but already has tag {tag}!")
+
+                if tag not in new_tags:
+                    new_tags.append(tag)
+            else:
+                for tag in attr_tags:
+                    if tag.startswith("misphunter:new-discovery="):
+                        _log.info(f"Removing new-discovery tag {tag} from old attribute {attr.uuid}.\n\t"
+                            f"attribute was first_seen {first_seen} and we need it to be newer than {new_time}.")
+                        misphandler.untag(misphunter, attr, tag)
+                        # Track stats
+                        helper.track_stats_tags_removed(misphunter, tag, attr)
+
+                
+    event_tags = misphandler.check_tags(event)
+    # Add tags to the event for every new attribute we discovered.
+    for tag in new_tags:
+        if tag not in event_tags:
+            _log.info(f"Adding {tag} tag to event {event.id}.")
+            misphandler.tag(misphunter, event, tag)
+            # Track stats
+            helper.track_stats_tags_added(misphunter, tag, event)
+
+    # Remove tags from the event if it was previously tagged with something 
+    # that's old now.
+    for tag in event_tags:
+        if tag.startswith("misphunter:new-discovery="):
+            if tag not in new_tags:
+                _log.info(f"Removing {tag} tag from event {event.id}.")
+                misphandler.untag(misphunter, event, tag)
+                # Track stats
+                helper.track_stats_tags_removed(misphunter, tag, event)
+
+    event = misphandler.get_event(misphunter, str(event.id))
+
+    return event
+
+
 
 def process_relationships(misphunter, event):
     # Organize events into rel_index so it's easier to process relationships
