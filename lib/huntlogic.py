@@ -209,7 +209,10 @@ def process_seeds(misphunter, seeds, event):
                             new_ip_found = seed.add_attribute('found-host', ip, type='ip-dst', disable_correlation=False, to_ids=False, pythonify=True)
                             misphandler.update_timestamps(new_ip_found)
                         else:
-                            misphandler.update_timestamps(new_ip_found)
+                            ip_attrs = misphandler.get_all_attrs_by_rel(seed, 'found-host')
+                            for attr in ip_attrs:
+                                if attr.value == ip:
+                                    misphandler.update_timestamps(attr)
 
                     if new_ip_found:
                         updated_seed = misphandler.update_existing_object(misphunter, seed)
@@ -334,12 +337,13 @@ def process_new_tags(misphunter, event):
     _log.info(f"Tagging new discoveries and untagging old ones.")
 
     tag_dict = {
-        "ip": "misphunter:new-discovery=\"host\"",
+        "attachment": "misphunter:new-discovery=\"service-updated\"",
         "domain": "misphunter:new-discovery=\"domain\"",
-        "x509": "misphunter:new-discovery=\"certificate\"",
+        "ip": "misphunter:new-discovery=\"host\"",
         "sha256": "misphunter:new-discovery=\"malware\"",
         "url": "misphunter:new-discovery=\"url\"",
-        "whois": "misphunter:new-discovery=\"whois-record\""
+        "whois": "misphunter:new-discovery=\"whois-record\"",
+        "x509": "misphunter:new-discovery=\"certificate\"",
     }
 
     new_tags = []

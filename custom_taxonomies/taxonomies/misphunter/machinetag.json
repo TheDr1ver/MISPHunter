@@ -1,7 +1,7 @@
 {
     "namespace": "misphunter",
     "description": "Taxonomy for classifying artifacts discovered by the MISPHunter service.",
-    "version": 1,
+    "version": 2,
     "predicates": [
         {
             "value": "new-discovery",
@@ -32,6 +32,11 @@
                     "value": "malware",
                     "expanded": "A new malware sample was discovered via searches or pivots",
                     "description": "A new malware sample was discovered recently."
+                },
+                {
+                    "value": "service-updated",
+                    "expanded": "A service was newly added or modified.",
+                    "description": "A service was newly added or modified since the last time this host was inspected."
                 },
                 {
                     "value": "url",
