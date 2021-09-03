@@ -1,0 +1,49 @@
+{
+    "namespace": "misphunter",
+    "description": "Taxonomy for classifying artifacts discovered by the MISPHunter service.",
+    "version": 1,
+    "predicates": [
+        {
+            "value": "new-discovery",
+            "expanded": "Newly discovered artifact",
+            "description": "New asset discovered by MISPHunter service"
+        }
+    ],
+    "values": [
+        {
+            "predicate": "new-discovery",
+            "entry": [
+                {
+                    "value": "certificate",
+                    "expanded": "New certificate discovered via searches or pivots",
+                    "description": "A new certificate was discovered recently."
+                },
+                {
+                    "value": "domain",
+                    "expanded": "New domain discovered via searches or pivots",
+                    "description": "A new domain was discovered recently."
+                },
+                {
+                    "value": "host",
+                    "expanded": "New host (IP) discovered via searches or pivots",
+                    "description": "A new host was disocvered recently."
+                },
+                {
+                    "value": "malware",
+                    "expanded": "A new malware sample was discovered via searches or pivots",
+                    "description": "A new malware sample was discovered recently."
+                },
+                {
+                    "value": "url",
+                    "expanded": "New URL discovered via searches or pivots",
+                    "description": "A new URL was discovered recently."
+                },
+                {
+                    "value": "whois-record",
+                    "expanded": "New WHOIS record discovered via searches or pivots",
+                    "description": "A new WHOIS record was discovered recently."
+                }
+            ]
+        }
+    ]
+}
