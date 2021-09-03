@@ -15,21 +15,31 @@ class MISPHunter():
         self.logger = helper.get_logger()
         
         #### Debugging-specific vars
-        # Debugging Var
+        # Overall Debugging Var - used for activating certain overly-verbose logs
         self.debugging = True
-        # Used for debugging - set to False to use dummy Censys data
+        # Set to False to use dummy Censys data
         self.do_it_live = True
-        
         # Force extraction of IOCs, regardless of JSON blob diff/age
         self.force_ioc_extract = False
-        # Scrub dates from JSON blobs (time/process intensive)
+        # Ignore timers set for seed objects - don't read them, 
+        # don't write them, just run API calls with reckless abandon
+        self.ignore_timers = False
+        
+        #### Everyday vars
+        # Scrub dates from JSON blobs (time/process intensive) - probably mark 
+        #   this for future deprecation
         self.remove_dates = False
-        # Use certificates found in JSON blobs to create pivot objects and potentially find new hosts
+        # Use certificates found in JSON blobs to create pivot objects and 
+        # potentially find new hosts. Probably should force this regardless.
         self.cert_pivoting = True
         # maxmium number of hosts a certificate can return before being truncated
         self.cert_pivot_threshold = 20 
-        # Determines how old an object can be before using API calls to update it. Defaults to 24.
+        # Determines how old an object can be before using API calls to update 
+        # it. Defaults to 24.
         self.update_threshold = 24
+        # hours before an attribute is no longer considered newly-discovered and
+        # the new-discovery tags are removed.
+        self.new_discovery_threshold = 72
         
                 
         # Read configs
@@ -60,8 +70,7 @@ class MISPHunter():
             self.shodan_api_counter = 0
 
             self.ignored_json_keys = {}
-            self.run_stats = {}
-            
+                        
             self.logger.info("\n\nLoaded configs okay...")
             
 
@@ -87,6 +96,15 @@ class MISPHunter():
                 "                                       \"\"    `,  _,--....___    |\n"
                 "                                               `/           \"\"\"\"\n"
                 "\n###############################################################################\n\n")
+        # Reset stats for each run
+        self.run_stats = {
+            "auto_blacklists_added" : {'total': 0},
+            "certs_added": {'total': 0},
+            "clones_added": {'total': 0},
+            "hosts_added": {'total': 0},
+            "tags_added": {'total': 0},
+            "tags_removed": {'total': 0}
+        }
         # Track start time for overall time it takes the script to run
         self.start_time = time()
         self.logger.debug(f"Running MISPHunter... Starting timer  at {self.start_time}!")
@@ -152,6 +170,9 @@ class MISPHunter():
             # Third, run relationships/relationship checks against all objects in the event.
             event = huntlogic.process_relationships(self, event)
 
+            # Tag/Untag event and individual attributes as "new" if newly added within update_threshold
+            event = huntlogic.process_new_tags(self, event)
+
             # Finally, set blacklisted=1 for objects that have a crappy return (e.g. certs with only 1 assoc. host)
             #   or dns/domain objects that are clearly shared hosts
             event = huntlogic.auto_blacklist(self, event)
@@ -170,15 +191,27 @@ class MISPHunter():
 if __name__ == "__main__":
     mh = MISPHunter()
 
+    # DEBUGGING Vars
     mh.debugging = False
-    mh.force_ioc_extract = False
-    mh.update_misp = True
-
     mh.do_it_live = True
+    mh.force_ioc_extract = False
     mh.ignore_timers = False
+    # I think this was removed entirely, so probably can be scrubbed.
+    # mh.update_misp = True
+
+    # EVERYDAY Vars
+    # Determines how old an object can be before using API calls to update 
+    # it. Defaults to 24.
     mh.update_threshold = 24
+    # Use certificates found in JSON blobs to create pivot objects and 
+    # potentially find new hosts. Probably should force this regardless.
     mh.cert_pivoting = True
-    mh.cert_pivot_threshold = 10
+    # maxmium number of hosts a certificate pivot can return before 
+    # being truncated
+    mh.cert_pivot_threshold = 20
+    # hours before an attribute is no longer considered newly-discovered and
+    # the new-discovery tags are removed.
+    mh.new_discovery_threshold = 72
 
     # mh.run()
 

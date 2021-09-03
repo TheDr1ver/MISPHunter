@@ -1148,3 +1148,17 @@ def swap_json_keys(unsorted_json):
                 new_dict[new_k] = v
 
     return new_dict
+
+def track_stats_tags_added(misphunter, tag, attr):
+    if tag not in misphunter.run_stats['tags_added']:
+        misphunter.run_stats['tags_added'][tag] = [attr.uuid]
+    elif attr.uuid not in misphunter.run_stats['tags_added'][tag]:
+        misphunter.run_stats['tags_added'][tag].append(attr.uuid)
+    misphunter.run_stats['tags_added']['total'] += 1
+
+def track_stats_tags_removed(misphunter, tag, attr):
+    if tag not in misphunter.run_stats['tags_removed']:
+        misphunter.run_stats['tags_removed'][tag] = [attr.uuid]
+    elif attr.uuid not in misphunter.run_stats['tags_removed'][tag]:
+        misphunter.run_stats['tags_removed'][tag].append(attr.uuid)
+    misphunter.run_stats['tags_removed']['total'] += 1
