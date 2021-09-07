@@ -168,7 +168,7 @@ def censys_v2_extract_certs(iocs, new_res):
     # and adds them to the list of IOCS
 
     # Find the key containing the cert hash
-    cert_fingerprint_pattern = r"(services_\d+_certificate)"
+    cert_fingerprint_pattern = r"(\d+_certificate)"
     # Find the key containing server names associated with the cert
     cert_name_pattern = r"leaf_data_names"
 

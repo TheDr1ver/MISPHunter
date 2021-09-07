@@ -282,8 +282,8 @@ def shodan_search_cert_hosts(misphunter, cert):
 
 def shodan_extract_certs(iocs, new_res):
     _log.debug(f"Extracting certificate IOCs from Shodan data...")
-    cert_fingerprint_pattern = r"(data_\d+_ssl_cert_fingerprint_sha256)"
-    cert_name_pattern = r"data_\d+_ssl_cert_subject_CN"
+    cert_fingerprint_pattern = r"(\d+_ssl_cert_fingerprint_sha256)"
+    cert_name_pattern = r"\d+_ssl_cert_subject_CN"
 
     iocs = helper.parse_cert(cert_fingerprint_pattern, cert_name_pattern, iocs, new_res)
     return iocs
