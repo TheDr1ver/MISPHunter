@@ -36,7 +36,7 @@ Once the MISPHunter service runs in the background, it will find all enabled see
 
 ### Example certificate object after running
 
-![image](https://user-images.githubusercontent.com/6147794/132046224-ff8a659e-fca0-4bf2-9ee9-50c8455e32d6.png)
+![image](https://user-images.githubusercontent.com/6147794/132556830-fbe63a36-4a76-4f2a-b4bc-912599783bf2.png)
 
 ### Example graph after running
 
