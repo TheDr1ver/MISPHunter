@@ -1,3 +1,4 @@
+import argparse
 import configparser
 from pprint import pformat
 from time import time, sleep
@@ -26,6 +27,8 @@ class MISPHunter():
         self.ignore_timers = False
         
         #### Everyday vars
+        # Enable verbose logging
+        self.verbose_logging = False
         # Scrub dates from JSON blobs (time/process intensive) - probably mark 
         #   this for future deprecation
         self.remove_dates = False
@@ -188,33 +191,8 @@ class MISPHunter():
         # self.logger.info({pformat(self.run_stats)})
         self.logger.info("DONE!")
 
-if __name__ == "__main__":
-    mh = MISPHunter()
-
-    # DEBUGGING Vars
-    mh.debugging = False
-    mh.do_it_live = True
-    mh.force_ioc_extract = False
-    mh.ignore_timers = False
-    # I think this was removed entirely, so probably can be scrubbed.
-    # mh.update_misp = True
-
-    # EVERYDAY Vars
-    # Determines how old an object can be before using API calls to update 
-    # it. Defaults to 24.
-    mh.update_threshold = 24
-    # Use certificates found in JSON blobs to create pivot objects and 
-    # potentially find new hosts. Probably should force this regardless.
-    mh.cert_pivoting = True
-    # maxmium number of hosts a certificate pivot can return before 
-    # being truncated
-    mh.cert_pivot_threshold = 20
-    # hours before an attribute is no longer considered newly-discovered and
-    # the new-discovery tags are removed.
-    mh.new_discovery_threshold = 72
-
-    # mh.run()
-
+def run_as_service(mh):
+    mh.logger.info(f"Launching MISPHunter as a service...")
     while True:
         chk_file = "./misphunter_chkpt.txt"
         try:
@@ -242,3 +220,82 @@ if __name__ == "__main__":
             time_remaining = (one_hour+1) - seconds_passed
             mh.logger.info(f"Only {seconds_passed} seconds have passed since the last time we ran MISPHunter. Sleeping for remaining {time_remaining} seconds.")
             sleep(time_remaining)
+
+if __name__ == "__main__":
+
+    # Process CLI arguments
+    msg = "MISPHunter"
+    parser = argparse.ArgumentParser(description = msg)
+
+    parser.add_argument("--cert-pivot-threshold", type=int, default=10,
+        help="Maxmium number of hosts a certificate pivot can return before being truncated. Defaults to 10.")
+    parser.add_argument("--new-discovery-threshold", type=int, default=72,
+        help="Maximum number of hours before an attribute is no longer considered newly-discovered and the new-discovery "\
+            "tags get removed. Defaults to 72.")
+    parser.add_argument("--update-threshold", type=int, default=24,
+        help="Determines how old an object can be before using API calls to update it. Defaults to 24.")
+    parser.add_argument("-s", "--run-as-service", action="store_true",
+        help="Run MISPHunter as a service. This puts it into an infinite loop where it runs once an hour.")
+    parser.add_argument("--debugging", action="store_true",
+        help="[DEBUG] Set debugging flag to true. Blows up your logs.")
+    parser.add_argument("--offline", action="store_false",
+        help="[DEBUG] Forces 'offline' mode, causing no 3rd party API queries to be used.")
+    parser.add_argument("--ignore-timers", action="store_true",
+        help="[DEBUG] Ignore the age of objects and process everything with live API requests.")
+    parser.add_argument("--force-ioc-extract", action="store_true",
+        help="[DEBUG] Force IOC extraction on all discovered objects, regardless of their age.")
+    parser.add_argument("-v", "--verbose", action="store_true",
+        help="Enable DEBUG-level logging.")
+
+    # Initialize parser
+    
+    args = parser.parse_args()
+
+    mh = MISPHunter()
+
+    # DEBUGGING Vars
+    mh.debugging = args.debugging
+    mh.do_it_live = args.offline
+    mh.force_ioc_extract = args.force_ioc_extract
+    mh.ignore_timers = args.ignore_timers
+    # I think this was removed entirely, so probably can be scrubbed.
+    # mh.update_misp = True
+
+    # EVERYDAY Vars
+    mh.verbose_logging = args.verbose
+    # Determines how old an object can be before using API calls to update 
+    # it. Defaults to 24.
+    mh.update_threshold = args.update_threshold
+    # Use certificates found in JSON blobs to create pivot objects and 
+    # potentially find new hosts. Probably should force this regardless.
+    mh.cert_pivoting = True
+    # maxmium number of hosts a certificate pivot can return before 
+    # being truncated
+    mh.cert_pivot_threshold = args.cert_pivot_threshold
+    # hours before an attribute is no longer considered newly-discovered and
+    # the new-discovery tags are removed.
+    mh.new_discovery_threshold = args.new_discovery_threshold
+
+    # Service flag
+    service = args.run_as_service
+
+    # DEBUG - REMOVE ME
+    if mh.debugging:
+        mh.logger.debug(f"debugging: {mh.debugging}")
+        mh.logger.debug(f"do_it_live: {mh.do_it_live}")
+        mh.logger.debug(f"force_ioc_extract: {mh.force_ioc_extract}")
+        mh.logger.debug(f"ignore_timers: {mh.ignore_timers}")
+        mh.logger.debug(f"verbose_logging: {mh.verbose_logging}")
+        mh.logger.debug(f"update_threshold: {mh.update_threshold}")
+        mh.logger.debug(f"cert_pivoting: {mh.cert_pivoting}")
+        mh.logger.debug(f"cert_pivot_threshold: {mh.cert_pivot_threshold}")
+        mh.logger.debug(f"new_discovery_threshold: {mh.new_discovery_threshold}")
+        mh.logger.debug(f"run_as_service: {service}")
+
+    if service:
+        run_as_service(mh)
+    else:
+        mh.logger.info("Service flag set to False. Running MISPHunter once then exiting.")
+        mh.run()
+
+    

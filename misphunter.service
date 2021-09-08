@@ -8,7 +8,7 @@ User=root
 Group=root
 WorkingDirectory=/opt/MISPHunter
 Environment=PATH=/var/www/MISP/venv/bin/
-ExecStart=/var/www/MISP/venv/bin/python /opt/MISPHunter/misphunter.py
+ExecStart=/var/www/MISP/venv/bin/python /opt/MISPHunter/misphunter.py -s
 Restart=always
 RestartSec=10
 
