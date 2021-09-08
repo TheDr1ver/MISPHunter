@@ -492,8 +492,8 @@ def flatten_dict(dictionary, remove_dates=False, remove_hashes=False):
                 '''
             else:
                 try:
-                    _log.debug(f"parent_value is not an empty list and parent_value[0] is not a dict.")
-                    _log.debug(f"...sorting parent_value list...")
+                    # _log.debug(f"parent_value is not an empty list and parent_value[0] is not a dict.")
+                    # _log.debug(f"...sorting parent_value list...")
                     parent_value.sort()
                 except Exception as e:
                     _log.error(f"FATAL (for now) Error trying to sort {parent_value}")
@@ -945,8 +945,11 @@ def search_cert_hosts(misphunter, cert_data, host_ip):
             censys_v2_ips.remove(host_ip)
 
         if len(censys_v2_ips) > misphunter.cert_pivot_threshold:
-            _log.warning(f"Censys returned {len(censys_v2_ips)}, which is higher than the threshold "
-                f"set of {misphunter.cert_pivot_threshold}. Truncating results.")
+            comment = f"Censys returned {len(censys_v2_ips)} related hosts, which is higher than the threshold set of "\
+                f"{misphunter.cert_pivot_threshold}. Truncating results and blacklisting this cert."
+            cert_data = misphandler.blacklist_cert(misphunter, cert_data, comment)
+            blacklisted = True
+
         censys_v2_ips = censys_v2_ips[0:misphunter.cert_pivot_threshold]
 
         _log.info(f"Censys IPs found: {censys_v2_ips}")
@@ -958,7 +961,7 @@ def search_cert_hosts(misphunter, cert_data, host_ip):
     else:
         _log.info(f"censys-v2 not listed as active. Skipping!")
 
-    if misphunter.shodan_active:
+    if misphunter.shodan_active and not blacklisted:
         _log.debug(f"checking shodan for IPs associated with {cert_hash}...")
         shodan_ips = shodan.shodan_search_cert_hosts(misphunter, cert_hash)
 
@@ -968,8 +971,11 @@ def search_cert_hosts(misphunter, cert_data, host_ip):
             shodan_ips.remove(host_ip)
 
         if len(shodan_ips) > misphunter.cert_pivot_threshold:
-            _log.warning(f"Shodan returned {len(shodan_ips)}, which is higher than the threshold "
-                f"set of {misphunter.cert_pivot_threshold}. Truncating results.")
+            comment = f"Shodan returned {len(shodan_ips)} related hosts, which is higher than the threshold set of "\
+                f"{misphunter.cert_pivot_threshold}. Truncating results and blacklisting this cert."
+            cert_data = misphandler.blacklist_cert(misphunter, cert_data, comment)
+            blacklisted = True
+
         shodan_ips = shodan_ips[0:misphunter.cert_pivot_threshold]
 
         _log.info(f"Shodan IPs found: {shodan_ips}")
@@ -980,6 +986,13 @@ def search_cert_hosts(misphunter, cert_data, host_ip):
                 all_ips.append(ip)
     else:
         _log.info(f"shodan not listed as active. Skipping!")
+
+    # Check total IPs length
+    if len(all_ips) > misphunter.cert_pivot_threshold:
+        comment = f"Total number of IPs ({len(all_ips)}) is greater than the threshold set of "\
+            f"{misphunter.cert_pivot_threshold}. Blacklisting this cert."
+        _log.info(comment)
+        cert_data = misphandler.blacklist_cert(misphunter, cert_data, comment)
 
     # add IPs to cert_data object
     cert_data = misphandler.add_ips_to_cert_obj(cert_data, ips)

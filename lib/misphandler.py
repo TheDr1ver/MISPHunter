@@ -65,25 +65,50 @@ def add_json_attr(checksum, raw_sorted_json_text, host_obj, json_type, comment="
     
     return host_obj
 
+def blacklist_cert(misphunter, cert_data, comment):
+    
+    cert_hash = get_attr_val_by_rel(cert_data, 'cert-sha256')
+    cert_hash_attr = get_attr_obj_by_rel(cert_data, 'cert-sha256')
+    cert_hash_attr.comment = comment
+
+    _log.warning(f"Search returned more than {misphunter.cert_pivot_threshold} IPs.")    
+    _log.warning(f"Disabling misphunter-cert object {cert_hash} - [{cert_data.uuid}] "
+        f"for future pivoting.")
+
+    blacklisted = get_attr_obj_by_rel(cert_data, 'blacklisted')
+
+    if int(blacklisted.value) == 0:
+
+        blacklisted.value = 1
+        
+        # if this object already exists in the event, update it
+        cert_obj_exists = misphunter.misp.get_object(cert_data.uuid, pythonify=True)
+        if not isinstance(cert_obj_exists, dict):
+            cert_data = update_existing_object(misphunter, cert_data)
+
+        if 'auto_blacklists_added' not in misphunter.run_stats:
+            misphunter.run_stats['auto_blacklists_added'] = {}
+        if cert_data.event_id not in misphunter.run_stats['auto_blacklists_added']:
+            misphunter.run_stats['auto_blacklists_added'][cert_data.event_id] = {}
+        if 'misphunter-certs' not in misphunter.run_stats['auto_blacklists_added'][cert_data.event_id]:
+            misphunter.run_stats['auto_blacklists_added'][cert_data.event_id]['misphunter-certs'] = []
+        misphunter.run_stats['auto_blacklists_added'][cert_data.event_id]['misphunter-certs'].append(cert_hash)
+        misphunter.run_stats['auto_blacklists_added']['total']+=1
+        
+    return cert_data
+    
+
 def blacklist_check_cert(misphunter, cert):
     # _log.debug(f"Checking misphunter-cert object {cert.uuid} to determine if it should be blacklisted.")
     cert_ips = cert.get_attributes_by_relation('cert-ip')
     sha256 = get_attr_val_by_rel(cert, 'cert-sha256')
-    if len(cert_ips) <= 1:
-        blacklist_attr = get_attr_obj_by_rel(cert, 'blacklisted')
-        if int(blacklist_attr.value) == 0:
-            _log.info(f"Cert {sha256} - {cert.uuid} only had {len(cert_ips)} IPs associated with it." 
-                " Blacklisting cert from future pivots!")
-            blacklist_attr.value = 1
-            cert = update_existing_object(misphunter, cert)
-            if 'auto_blacklists_added' not in misphunter.run_stats:
-                misphunter.run_stats['auto_blacklists_added'] = {}
-            if cert.event_id not in misphunter.run_stats['auto_blacklists_added']:
-                misphunter.run_stats['auto_blacklists_added'][cert.event_id] = {}
-            if 'misphunter-certs' not in misphunter.run_stats['auto_blacklists_added'][cert.event_id]:
-                misphunter.run_stats['auto_blacklists_added'][cert.event_id]['misphunter-certs'] = []
-            misphunter.run_stats['auto_blacklists_added'][cert.event_id]['misphunter-certs'].append(sha256)
-            misphunter.run_stats['auto_blacklists_added']['total']+=1
+    if len(cert_ips) <= 1 or len(cert_ips) >= misphunter.cert_pivot_threshold:
+        comment = f"Cert {sha256} - {cert.uuid} had {len(cert_ips)} IPs associated with it. " \
+            f"Pivot threshold currently set to {misphunter.cert_pivot_threshold}. "\
+            f"Blacklisting cert from future pivots!"
+        _log.info(comment)
+        cert = blacklist_cert(misphunter, cert, comment)
+            
     else:
         _log.debug(f"Cert {sha256} - {cert.uuid} had {len(cert_ips)} IPs associated with it. Leaving blacklist val alone!")
     return cert
@@ -605,6 +630,12 @@ def search_recent_updated_objects(misphunter, event, seed, value=""):
         for host_obj in misphunter_hosts:
             host_ip = get_attr_val_by_rel(host_obj, 'host-ip')
             host_attr = get_attr_obj_by_rel(host_obj, 'host-ip')
+            if not host_attr:
+                _log.error(f"Something went wrong. Apparently host object {host_obj.uuid} doesn't have a host-ip "
+                    f"associated with it. This should never happen. Dumping attributes and skipping for now.")
+                for a in host_obj.Attribute:
+                    _log.error(f"\n{pformat(a.to_dict())}")
+                continue
             host_obj_last_seen = int(host_attr.last_seen.timestamp())
             if host_obj_last_seen < min_epoch:
                 _log.info(f"Skipping {host_obj.uuid} because the IP was last seen too long ago.")

@@ -84,8 +84,11 @@ def cert_pivot(misphunter, host_obj, event, seed):
                 _log.debug(f"new_cert_obj is set to True, which means this cert is new to this event, which means "
                     "we're once again searching for related IPs!")
             # Find IPs associated with this cert
+            if not hasattr(cert_data, 'event_id'):
+                cert_data.event_id = event.id
             cert_data = helper.search_cert_hosts(misphunter, cert_data, host_ip)
-
+            blacklisted = misphandler.get_attr_val_by_rel(cert_data, 'blacklisted')
+        
         # Update object/event
         if new_cert_obj:
             _log.info(f"misphunter-cert object {cert_data.uuid} is apparently new to event {event.id}. "
@@ -117,9 +120,14 @@ def cert_pivot(misphunter, host_obj, event, seed):
                     continue
                 else:
                     event = updated_event
+
         # Add all finished cert_data objects to a big list for IP processing
+        # taking care to ignore blacklisted events
         if cert_data not in all_cert_data:
-            all_cert_data.append(cert_data)
+            if not int(blacklisted) == 1:
+                all_cert_data.append(cert_data)
+            else:
+                _log.debug(f"cert object {cert_data.uuid} is blacklisted. Not processing associated IPs.")
 
     _log.info(f"Finished processing certs for host object {host_obj.uuid}.")
 
@@ -127,6 +135,7 @@ def cert_pivot(misphunter, host_obj, event, seed):
 
     event = process_cert_ips(misphunter, all_cert_data, seed, event, host_ip)
 
+    _log.debug(f"Finished certificate pivoting!")
     return event
 
 def process_cert_ips(misphunter, all_cert_data, seed, event, host_ip):
@@ -245,6 +254,7 @@ def process_seeds(misphunter, seeds, event):
         _log.debug(f"returning untouched event that was sent to the process_seeds routine. FIGURE IT OUT!")
     else:
         event = updated_event
+    _log.debug(f"Finished processing {len(seeds)} seeds!")
     return event
 
 def process_hosts(misphunter, event, seed, ips):
