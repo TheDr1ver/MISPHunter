@@ -152,25 +152,34 @@ class MISPHunter():
                 f"{event.info}"
                 f"\n###############################################################################\n\n")
             misphandler.get_event_hosts(self, event)
-            # Above sets global lists of MISPObjects like mh.event_hosts = [event_hosts]
+            # Above sets global lists of MISPObjects like mh.event_hosts = [<misphunter-host>, <misphunter-host>]
             misphandler.get_event_seeds(self, event)
+            # mh.event_seeds = [<misphunter-seed>]
             misphandler.get_event_certs(self, event)
-            # TODO
+            # mh.event_certs = [<misphunter-cert>]
+
+            # TODO - still haven't built these objects yet
+            #   Issues #15 and #16
             misphandler.get_event_dns(self, event)
-            # TODO
+            # mh.event_dns = [<misphunter-dns>]
             misphandler.get_event_malware(self, event)
+            # mh.event_malware = [<misphunter-malware>]
             
             # First, process seeds
             event = huntlogic.process_seeds(self, seeds, event)
             # process_seeds -> for each seed:
             #   process_hosts -> for each host IP found by the seed search:
             #       cert_pivot -> get all certs living on host. For each cert, create a misphunter-cert object. 
-            #       for each cert_pivot object:
+            #       for each misphunter-cert object:
+            #           IMPORTANT: IF CERT IS TRASH/BLACKLISTED, SKIP PROCESS_CERT_IPS
             #           process_cert_ips -> For all the IPs found in each cert,
             #               process_hosts with the original seed and the IPs found related to that cert.
 
-            # TODO
+            # TODO - Issue #3
             # Second, process all enabled misphunter objects for this event that were not touched after process_seeds()
+            #   Might want to handle this differently than I originally thought. 
+            #   If a host no longer shows up in a seed search, how can we tell if it's still related?
+            #   Should it then be disabled?
 
             # Third, run relationships/relationship checks against all objects in the event.
             event = huntlogic.process_relationships(self, event)
