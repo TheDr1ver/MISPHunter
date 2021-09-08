@@ -8,12 +8,13 @@ This needs to be installed on the MISP server in order to monitor MISPHunter sea
 Make sure everything lives in /opt/MISPHunter/
 
 To install the service do the following as root:
-
+```
 cp /opt/MISPHunter/misphunter.service /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable --now misphunter
 systemctl start misphunter
 systemctl status misphunter
+```
 
 ## How to use it
 
