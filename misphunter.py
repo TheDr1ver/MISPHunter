@@ -1,8 +1,10 @@
 import argparse
 import configparser
+import logging
+import urllib3
+
 from pprint import pformat
 from time import time, sleep
-import urllib3
 
 from pymisp import PyMISP
 
@@ -12,9 +14,7 @@ class MISPHunter():
     def __init__(self, logger=None):
 
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-        
-        self.logger = helper.get_logger()
-        
+                
         #### Debugging-specific vars
         # Overall Debugging Var - used for activating certain overly-verbose logs
         self.debugging = True
@@ -43,6 +43,8 @@ class MISPHunter():
         # hours before an attribute is no longer considered newly-discovered and
         # the new-discovery tags are removed.
         self.new_discovery_threshold = 72
+
+        self.logger = helper.get_logger(verbose=self.verbose_logging)
         
                 
         # Read configs
@@ -150,7 +152,7 @@ class MISPHunter():
                 f"{event.info}"
                 f"\n###############################################################################\n\n")
             misphandler.get_event_hosts(self, event)
-            # Above sets global lists of MISPObjects like misphunter.event_hosts = [event_hosts]
+            # Above sets global lists of MISPObjects like mh.event_hosts = [event_hosts]
             misphandler.get_event_seeds(self, event)
             misphandler.get_event_certs(self, event)
             # TODO
@@ -291,6 +293,11 @@ if __name__ == "__main__":
         mh.logger.debug(f"cert_pivot_threshold: {mh.cert_pivot_threshold}")
         mh.logger.debug(f"new_discovery_threshold: {mh.new_discovery_threshold}")
         mh.logger.debug(f"run_as_service: {service}")
+
+    # Set verbose logging
+    if mh.verbose_logging:
+        mh.logger.setLevel(logging.DEBUG)
+        mh.logger.debug(f"Verbose logging enabled!")
 
     if service:
         run_as_service(mh)
