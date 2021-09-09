@@ -28,6 +28,100 @@ def get_logger():
 
 # _log = helper.get_logger()
 
+###################
+#### Stage 2 Functions
+###################
+
+def set_the_stage(mh, objs, event):
+    mh.logger.info(f"Setting the stage with objects...")
+
+    obj_index_mapping = {
+        "misphunter-seed": "search-string",
+        "misphunter-host": "host-ip",
+        "misphunter-cert": "cert-sha256",
+        "misphunter-dns": "domain",
+        "misphunter-malware": "sha256"
+    }
+
+    for obj in objs:
+        # get value of object's "index" or unique value
+        object_name = obj.name
+        if obj.name not in obj_index_mapping:
+            mh.logger.error(f"{obj.name} object not a known type for pivots. Skipping!")
+            # TODO update stats for skipped stage objects
+            continue
+        pivot_rel = obj_index_mapping[obj.name]
+        value = misphandler.get_attr_val_by_rel(obj, pivot_rel)
+        if not value:
+            mh.logger.error(f"{obj.name} object had no pivot value. Skipping!")
+            # TODO update stats for skipped stage objects
+            continue
+
+        event = stage_object(mh, object_name, pivot_rel, value, event)
+
+    mh.logger.info(f"Finished setting the stage!")
+    return event
+
+def stage_object(mh, object_name, pivot_rel, value, event):
+    mh.logger.info(f"Staging {object_name} object using value {value}...")
+    obj = False
+    # Look to see if the object exists in the event
+    # If so: 
+    #   update timestamps for pivot_rel attr matching value
+    #   obj = update object in MISP
+    #   retrieve updated event
+
+    # Look to see if the object exists in the instance, given the 
+    #   new_discovery_threshold window
+    # If so:
+    #   clone object
+    #   update timestamps for pivot_rel attr matching value
+    #   obj = add cloned object to MISP event
+    #   update MISP event
+    #   retrieve updated event
+
+    # If obj == False (not in event, not in instance):
+    #   create bare minimum, brand new MISP object
+    #   obj = misphandler.create_obj_skeleton(mh, value, object_name)
+    #   obj = add new object to MISP event
+    #   update MISP event
+    #   retrieve updated event
+
+    # Check if the object is blacklisted
+    # If blacklisted:
+    #     return event
+    # else: 
+    #   if obj.uuid not in mh.event_processed_object_uuids:
+    #       add obj to mh.staged_objects
+    # return event
+
+def process_stage(mh, event):
+    mh.logger.info(f"Processing the current stage")
+    # continue processing event_staged_objects until they're exhausted
+    # as each event is processed from the stage, add its UUID to 
+    # mh.event_processed_object_uuids and remove it from mh.event_staged_objects
+    for obj in mh.event_staged_objects:
+        # if obj.name == "misphunter-seed":
+        #     event = process_seed(mh, obj, event)
+        if obj.name == "misphunter-host":
+            event = process_host(mh, obj, event)
+            # host is inspected for newness, 
+            # API hit if necessary, IOCs extracted, Dict Compare
+            # various pivot types are pulled & staged
+            #   in this case, 'found-ip' value gets passed to 
+            #   event = stage_object(mh, 'misphunter-host', 'host-ip', value, event)
+            # obj is updated (it already exists in this event because it was in staging)
+            # obj is removed from mh.staged_objects
+            # obj.uuid is added to mh.processed_object_uuids
+            # on to the next object! Loop until empty!
+            
+            
+        # elif obj.name == "misphunter-cert":
+        #     event = process_cert(mh, obj, event)
+    return event
+
+###################
+
 def auto_blacklist(mh, event):
     
     mh.logger.debug(f"Determining if any objects should be automatically blacklisted based on their pivot results.")

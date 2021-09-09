@@ -165,9 +165,11 @@ class MISPHunter():
             # mh.event_malware = [<misphunter-malware>]
 
             # Reset updated objects and found pivots for each event processed
-            mh.event_new_objects = []
-            mh.event_new_object_uuids = []
+            # mh.event_new_objects = []
+            # mh.event_new_object_uuids = []
+            mh.event_staged_objects = []
             mh.event_processed_object_uuids = []
+
             
             # First, process seeds
             # event = huntlogic.process_seeds(self, seeds, event)
@@ -179,12 +181,19 @@ class MISPHunter():
             #           process_cert_ips -> For all the IPs found in each cert,
             #               process_hosts with the original seed and the IPs found related to that cert.
 
-            ### Simplified logic
+            ### Simplified logic - First attempt failed
             # Process seeds - this will any host objects the seeds discovered to mh.event_new_objects
-            huntlogic.process_seeds(self, seeds, event)
+            # huntlogic.process_seeds(self, seeds, event)
             # Continue processing new_event_objects until they're exhausted
             # Processing host objects should generate cert objects, and vice-versa
-            event = huntlogic.process_event_new_objects(self, event)
+            # event = huntlogic.process_event_new_objects(self, event)
+
+            ### 2-Stage Process
+            event = huntlogic.set_the_stage(self, seeds, event)
+            # continue processing event_staged_objects until they're exhausted
+            # as each event is processed from the stage, add its UUID to 
+            #   event_processed_object_uuids and remove it from event_staged_objects
+            event = huntlogic.process_stage(self, event)
             
 
             # TODO - Issue #3
