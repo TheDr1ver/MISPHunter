@@ -20,8 +20,8 @@ Here was the idea for the improved readablility/simplicity of the flow:
 - For each event, process seeds
 - For each seed, run search & generate `misphunter-host` objects. Do not add these objects to the event yet. 
     Save new and updated objects to `mh.new_objects`. Return event
-- For each `misphunter-*` object in `mh.new_objects`, process the object according to the type 
-    - extract IOCs, compare dicts, remove from `mh.new_objects`, add object UUID to 
+- For each `misphunter-*` object in `mh.new_objects`, process the object according to the type:
+    extract IOCs, compare dicts, remove from `mh.new_objects`, add object UUID to 
     `mh.updated_objects`, update & return event.
 - ^^^ *Here's where it breaks down.* If you don't update those objects or add them to the event before continuing,
     you have no way of knowing which ones you've already cloned/created/updated and added to `mh.new_objects`,
