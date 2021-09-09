@@ -16,7 +16,7 @@ be better spent in tweaking the existing scripts that I know actually work.
 
 Here was the idea for the improved readablility/simplicity of the flow:
 
-- Get emabled seeds & corresponding events. This results in `results = {'event_id': [<misphunter-seed>]}`
+- Get enabled seeds & corresponding events. This results in `results = {'event_id': [<misphunter-seed>]}`
 - For each event, process seeds
 - For each seed, run search & generate `misphunter-host` objects. Do not add these objects to the event yet. 
     Save new and updated objects to `mh.new_objects`. Return event
@@ -40,3 +40,45 @@ Here was the idea for the improved readablility/simplicity of the flow:
 There's got to be a better/cleaner way to do this instead of the rat's nest of nested functions I currently
 have in process_seeds(), I'm just burned out and can't seem to wrap my head around it at the moment without 
 making things worse.
+
+# Let's Rethink This
+
+- Get enabled seeds & corresponding events. This results in `results = {'event_id': [<misphunter-seed>]}`
+- For each event, process seed objects
+
+## Two modes for objects
+
+### Stage_Object()
+- Staging an object is handled in the following manner
+    - Check event for existing object. If object exists, update timestamps, update object, & retrieve event.
+    - If object does not exist, check server for object within `{update_threshold}` age. Clone object, update timestamps,
+        update object, & add to/update event & then retrieve event.
+    - If object does not exist anywhere, create object, save new object to event, retrieve updated event.
+    - Check if the object about to be staged is blacklisted, and if so, skip it.
+    - Finally, add the resulting object to `mh.staged_objects`
+
+### Process_Object()
+- Loop through `mh.staged_objects`
+    - Process each staged object based on the object type it is
+        - `misphunter-seed`
+            - search gets run, IPs get returned and added to processing object
+            - various pivot types are pulled - in this case, `found-ip` gets
+                passed to `stage_object(value=ip, object_name="misphunter-host")`
+            - Follow `stage_object()` procedures
+        - `mipshunter-host`
+            - host is inspected, IOCs extracted, Dict Compare
+            - various pivot types are pulled - in this case, `extracted-certificate` gets
+                passed to `stage_object(value=cert, object_name="misphunter-cert")`
+            - Follow `stage_object()` procedures
+        - `misphunter-certificate`
+            - cert is inspected, related IPs are retrieved
+            - Auto-Blacklist is run to make sure too many IPs weren't pulled. If blacklisted, skip to update section.
+            - various pivot types are pulled - in this case, `cert-ip` gets passed to
+                `stage_object(value=ip, object_name="misphunter-host)`
+            - Follow `stage_object()` procedures
+    - process object is updated
+    - process object is removed from `mh.staged_objects`
+    - process object UUID is added to `mh.processed_object_uuids`
+- Continue to process objects, looping through continually updated `mh.staged_objects` until finished
+- ^^^ The key is right before an object is moved to `mh.staged_objects` it MUST be pushed to the instance, 
+    and the event MUST be updated.
