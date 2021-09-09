@@ -163,7 +163,7 @@ def build_misphunter_cert(mh, cert, parent_obj, event, raw_data):
     
     return cert_obj
 
-def build_new_host_obj(mh, event, seed, ip):
+def build_new_host_obj(mh, event, ip):
     mh.logger.info(f"MISP Object for {ip} does not exist. Building a new one.")
     try:
         raw_template = mh.misp.get_raw_object_template('misphunter-host')
@@ -172,18 +172,12 @@ def build_new_host_obj(mh, event, seed, ip):
         return False
     host_obj = MISPObject('misphunter-host', misp_objects_template_custom=raw_template)
     host_obj.is_new = True
-    service = get_attr_val_by_rel(seed, 'service')
-    search = get_attr_val_by_rel(seed, 'search-string')
-    comment = f"Host derived from {service} seed: {search}"
-    host_obj.add_attribute('host-ip', value=str(ip), type='ip-dst', to_ids=False, comment=comment)
+    host_obj.add_attribute('host-ip', value=str(ip), type='ip-dst', to_ids=False)
     host_obj.add_attribute('blacklisted', value=str(0), type='boolean', to_ids=False)
     # Update timestamps
     for attr in host_obj.Attribute:
         update_timestamps(mh, attr)
-    # Define relationship
-    # ref_comment = f"{ip} derived from {service} search"
-    # host_obj.add_reference(seed.uuid, "derived-from", comment=ref_comment)
-
+    
     if 'hosts_added' not in mh.run_stats:
         mh.run_stats['hosts_added'] = {str(event.id) : [ip]}
     elif str(event.id) not in mh.run_stats['hosts_added']:
@@ -216,7 +210,10 @@ def check_all_certs(mh, cert, event):
         if obj.uuid in event_cert_uuids:
             mh.logger.info(f"Found a cert object that already lives in this exact event, so that's the one we'll use: {obj.uuid}")
             cert_data = obj
-            break
+            cert_data.is_new = False
+            cert_data.is_clone=False
+            return cert_data
+
         if cert_data == False:
             mh.logger.debug(f"Found first cert object for {cert}: {obj.uuid}")
             cert_data = obj
@@ -229,6 +226,7 @@ def check_all_certs(mh, cert, event):
         if str(cert_data.event_id)!=str(event.id):
             mh.logger.info(f"Found existing cert object {cert_data.uuid} from a different event. Cloning object for this event!")
             cert_data = clone_obj(mh, cert_data, event)
+            cert_data.is_clone=True
     
     return cert_data
 
@@ -291,10 +289,11 @@ def check_timer(mh, seed):
     update_seed_object = False
     now = int(time())
 
-    last_run = get_seed_last_run(mh, seed)
+    last_run = get_attr_val_by_rel(seed, 'last-run')
 
     # If no last_run time found, update event
     if last_run:
+        mh.logger.info(f"seed last ran: {last_run}")
         last_run_time = int(last_run.timestamp())
     else:
         mh.logger.info(f"Search does not have a record of when it was last run. Setting last run timestamp to 0.")
@@ -306,7 +305,8 @@ def check_timer(mh, seed):
         mh.logger.debug(f"Setting update_seed_object to True.")
         update_seed_object = True
 
-    freq = get_frequency(mh, seed)
+    freq = get_attr_val_by_rel(seed, 'update-freq')
+    mh.logger.info(f"Search frequency for seed {seed.uuid} set to run once every {freq} hours.")
 
     # If no frequency time found, update event
     if freq:
@@ -450,65 +450,14 @@ def get_all_event_seeds(mh):
     mh.logger.debug(f"{all_event_seeds.keys()}")
     return all_event_seeds
 
-def get_event_seeds(mh, event):
-    # mh.logger.debug(f"Getting all seed objects associated with event {event.id}.")
-    event_seeds = []
+def get_event_objects(mh, event, name):
+    event_objects = []
     try:
-        event_seeds = event.get_objects_by_name("misphunter-seed")
+        event_objects = event.get_objects_by_name(name)
     except Exception as e:
-        mh.logger.error(f"Something went wrong trying to get misphunter-seed objects from event {event.id}: {e}")
-    mh.event_seeds = event_seeds
-    mh.logger.debug(f"Found {len(mh.event_seeds)} existing misphunter-seed objects in event {event.id}!")
-
-def get_event_hosts(mh, event):
-    # mh.logger.debug(f"Getting misphunter-hosts from event {event.id}")
-    event_hosts = []
-    try:
-        event_hosts = event.get_objects_by_name("misphunter-host")
-    except Exception as e:
-        mh.logger.error(f"Something went wrong trying to get misphunter-host objects from event {event.id}: {e}")
-    mh.event_hosts = event_hosts
-    mh.logger.debug(f"Found {len(mh.event_hosts)} existing misphunter-host objects in event {event.id}!")
-
-def get_event_certs(mh, event):
-    # mh.logger.debug(f"Getting misphunter-certs from event {event.id}")
-    event_certs = []
-    try:
-        event_certs = event.get_objects_by_name("misphunter-cert")
-    except Exception as e:
-        mh.logger.error(f"Something went wrong trying to get misphunter-cert objects from event {event.id}: {e}")
-    mh.event_certs = event_certs
-    mh.logger.debug(f"Found {len(mh.event_certs)} existing misphunter-cert objects in event {event.id}!")
-
-def get_event_dns(mh, event):
-    # mh.logger.debug(f"Getting misphunter-dns objects from event {event.id}")
-    event_dns = []
-    try:
-        event_dns = event.get_objects_by_name("misphunter-dns")
-    except Exception as e:
-        mh.logger.error(f"Something went wrong trying to get misphunter-dns objects in event {event.id}: {e}")
-    mh.event_dns = event_dns
-    mh.logger.debug(f"Found {len(mh.event_dns)} existing misphunter-dns objects in event {event.id}!")
-
-def get_event_malware(mh, event):
-    # mh.logger.debug(f"Getting misphunter-malware objects from event {event.id}")
-    event_malware = []
-    try:
-        event_malware = event.get_objects_by_name("misphunter-malware")
-    except Exception as e:
-        mh.logger.error(f"Something went wrong trying to get misphunter-malware objects from event {event.id}: {e}")
-    mh.event_malware = event_malware
-    mh.logger.debug(f"Found {len(mh.event_malware)} existing misphunter-malware objects in event {event.id}!")
-
-def get_frequency(mh, seed):
-    mh.logger.info(f"Getting the update frequency of seed {seed.uuid}.")
-    freq = False
-    freqs = seed.get_attributes_by_relation('update-freq')
-    if len(freqs) > 0:
-        freq = freqs[0].value
-        mh.logger.info(f"Search frequency for seed {seed.uuid} set to run once every {freq} hours.")
-        return freq
-    return freq
+        mh.logger.error(f"Something went wrong trying to get {name} objects from event {event.id}: {e}")
+    mh.logger.debug(f"Found {len(event_objects)} existing {name} objects in event {event.id}!")
+    return event_objects
 
 def get_global_blocks(mh):
     mh.logger.info(f"Searching MISP for globally blocked IPs")
@@ -523,7 +472,30 @@ def get_global_blocks(mh):
     mh.logger.info(f"Found {len(global_blocks)} global blocks: {global_blocks}")
     return global_blocks
 
-def get_host_obj(mh, event, seed, ip):
+def get_host_obj(mh, ip, event):
+    # First, check if this IP shows up in any misphunter-host objects already living in this event.
+    for host_obj in mh.event_hosts:
+        host_ip = get_attr_val_by_rel(host_obj, 'host-ip')
+        if host_ip == ip:
+            mh.logger.info(f"Found existing object already living in this event with host-ip {ip}: {host_obj.uuid}. Updating timestamp and returning that.")
+            ip_attr = get_attr_obj_by_rel(host_obj, 'host-ip')
+            update_timestamps(mh, ip_attr)
+            host_obj.is_new=False
+            return host_obj
+
+    # Then, check if this IP shows up in any recently-updated misphunter-host objects living on the server.
+    mh.logger.info(f"No existing object found in event {event.id} for IP {ip}. Searching the rest of the instance...")
+    existing_obj = search_recent_updated_objects(mh, event, object_name="misphunter-host", value=ip, 
+        timeframe=mh.update_threshold)
+    if existing_obj:
+        return existing_obj
+    
+    mh.logger.info(f"No existing object found server-wide. Building new host_obj.")
+    host_obj = build_new_host_obj(mh, event, ip)
+                
+    return host_obj
+
+def get_host_obj_old(mh, event, seed, ip):
     # First, check if this IP shows up in any misphunter-host objects already living in this event.
     for host_obj in mh.event_hosts:
         host_ip = get_attr_val_by_rel(host_obj, 'host-ip')
@@ -540,12 +512,6 @@ def get_host_obj(mh, event, seed, ip):
         mh.logger.info(f"No existing object found server-wide. Building new host_obj.")
         host_obj = build_new_host_obj(mh, event, seed, ip)
     else:
-        '''
-        if existing_obj.is_new:
-            service = get_attr_val_by_rel(seed, 'service')
-            ref_comment = f"{ip} derived from {service} search"
-            existing_obj.add_reference(seed.uuid, "derived-from", comment=ref_comment)
-        '''
         return existing_obj
             
     return host_obj
@@ -595,17 +561,98 @@ def get_local_blocks(mh, event):
 
     return local_blocks
 
-def get_seed_last_run(mh, seed):
-    last_run = False
-    last_runs = seed.get_attributes_by_relation('last-run')
-    if len(last_runs) > 0:
-        last_run = last_runs[0].value
-        mh.logger.info(f"seed last ran: {last_run}")
-        return last_run
-    mh.logger.info(f"seed last ran: {last_run}")
-    return last_run
+def search_recent_updated_objects(mh, event, object_name="", value="", timeframe=0):
+    # This is called by the *_search_ip section of various plugins.
+    # It is also called by get_host_obj
+    #   It returns False if no object was discovered that was updated 
+    #   in the last {timeframe} hours. Otherwise it
+    #   returns MISPObject, which skips all the enrichment processes it
+    #   would otherwise go through.
+    newest_obj = False
 
-def search_recent_updated_objects(mh, event, seed, value=""):
+    obj_name_key_map = {
+        "misphunter-host": "host-ip",
+        "misphunter-cert": "cert-sha256",
+        # FUTURE-PROOFING
+        "misphunter-dns": "domain",
+        "misphunter-malware": "sha256"
+    }
+
+    min_epoch = int(time()) - (timeframe * 60 * 60)
+    # if timeframe set to 0, search all time (used for things like certs that shouldn't change)
+    if timeframe == 0:
+        min_epoch = 0
+
+    try:
+        misphunter_objs = mh.misp.search(controller="objects", object_name=object_name,
+            value=value, timestamp=min_epoch, with_attachments=True, pythonify=True)
+        mh.logger.info(f"Found {len(misphunter_objs)} results!")
+    except Exception as e:
+        mh.logger.error(f"Something went wrong trying to get {object_name} objects server-wide: {e}")
+        return False
+
+    for obj in misphunter_objs:
+        rel = obj_name_key_map[object_name]
+        attr_val = get_attr_val_by_rel(obj, rel)
+        attr_obj = get_attr_obj_by_rel(obj, rel)
+        if not attr_obj:
+            mh.logger.error(f"Something went wrong. Apparently {object_name} object {obj.uuid} doesn't have a {rel} "
+                f"associated with it. This should never happen. Dumping attributes and skipping for now.")
+            for a in obj.Attribute:
+                mh.logger.error(f"\n{pformat(a.to_dict())}")
+                continue
+
+        if not hasattr(attr_obj, 'last_seen'):
+            mh.logger.error(f"{object_name} {rel} attribute doesn't have a last_seen timestamp. This is unusual. "
+                "Adding one now.")
+            attr_obj = update_timestamps(mh, attr_obj)
+            attr_obj.last_seen = datetime.fromtimestamp(attr_obj.last_seen)
+
+        obj_last_seen = int(attr_obj.last_seen.timestamp())
+        if obj_last_seen < min_epoch:
+            mh.logger.info(f"Skipping {obj.uuid} because the {rel} was last seen too long ago.")
+            mh.logger.debug(f"Last_seen was {obj_last_seen} and we need it to be greater than {min_epoch} to "
+                f"use it.")
+            continue
+        mh.logger.info(f"Looks like we're good to go with {obj.uuid}")
+        mh.logger.debug(f"Last_seen was {obj_last_seen} and we need it to be less than {min_epoch} to "
+            f"skip using it again")
+
+        if attr_val == value:
+            if not newest_obj:
+                newest_obj = obj
+                newest_attr = get_attr_obj_by_rel(newest_obj, rel)
+                newest_obj_last_seen = int(newest_attr.last_seen.timestamp())
+                continue
+            if obj_last_seen >= newest_obj_last_seen:
+                newest_obj = obj
+                newest_attr = get_attr_obj_by_rel(newest_obj, rel)
+                newest_obj_last_seen = int(newest_attr.last_seen.timestamp())
+
+    if newest_obj:
+        # Check if this object belongs to the event we're processing, otherwise clone it.
+        if str(newest_obj.event_id) != str(event.id):
+            mh.logger.info(f"Most-recently updated object is from a different event - [{newest_obj.event_id} vs {event.id}]")
+            mh.logger.info(f"Cloning latest version of object {newest_obj.uuid} for adding to into event {event.id}")
+            newest_obj = clone_obj(mh, newest_obj, event)
+            attr_obj = get_attr_obj_by_rel(newest_obj, rel)
+            # Fixing first_seen because it's the first time it was seen in this event, 
+            # but not the first time in the whole instance because it was cloned.
+            epoch = int(time())
+            attr_obj.first_seen = epoch-2
+        else:
+            # A check should be done before search_recent_updated_objects() is ever called
+            # to make sure that an appropriate object doesn't already exist in the event we're
+            # currently processing. If we get here, it means that check was never run.
+            mh.logger.debug(f"#### THIS SHOULD HAVE ALREADY BEEN CHECKED - "
+                "YOU SHOULD NOT GET HERE - INVESTIGATE! ####")
+            newest_obj.is_new=False
+
+    return newest_obj
+
+        
+
+def search_recent_updated_objects_old(mh, event, seed, value=""):
     # This is called by the *_search_ip section of various plugins.
     #   It returns False if no object was discovered that was updated 
     #   in the last {mh.update_threshold} hours. Otherwise it
@@ -751,11 +798,11 @@ def update_event(mh, event):
     
     # Update the global "existing lists" every time there's a successful update
     if updated_event:
-        get_event_seeds(mh, event)
-        get_event_hosts(mh, event)
-        get_event_certs(mh, event)
-        get_event_dns(mh, event)
-        get_event_malware(mh, event)
+        mh.event_hosts = get_event_objects(mh, event, 'misphunter-host')
+        mh.event_seeds = get_event_objects(mh, event, 'misphunter-seed')
+        mh.event_certs = get_event_objects(mh, event, 'misphunter-cert')
+        mh.event_dns = get_event_objects(mh, event, 'misphunter-dns')
+        mh.event_malware = get_event_objects(mh, event, 'misphunter-malware')
 
     future = int(updated_event.timestamp.timestamp() + 1)
     updated_event.timestamp = future

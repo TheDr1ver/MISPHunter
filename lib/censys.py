@@ -29,44 +29,39 @@ def get_logger():
 
 def censys_v1_search_cert_data(mh, cert, event):
     # Return MISPObject of cert_data if already found, otherwise return raw censys response
-    cert_data = False
+    # cert_data = False
     mh.logger.info(f"Getting raw JSON data for {cert}")
     raw = {}
     url = f"https://search.censys.io/api/v1/view/certificates/{cert}"
     auth = (mh.censys_v1_id, mh.censys_v1_secret)
     headers = {"accept": "application/json"}
 
-    if mh.do_it_live:
-        cert_data = misphandler.check_all_certs(mh, cert, event)
-        if cert_data:
-            # if check_all_certs returns a misphunter-cert object, we're using an existing (and the latest) MISPObject
-            return cert_data
-
-        # If cert_data == False, we didn't find a cert_object and we need to create one.
-        mh.logger.info(f"Using LIVE API query to reach out to Censys and get certificate data...")
-        try:
-            rate_limit = mh.censys_v1_rate
-            # Sleep {rate_limit} seconds for each time the search is run
-            helper.rate_respect(mh, mh.search_time, rate_limit)
-            mh.search_time = time() 
-            res = requests.get(url, auth=auth)
-            mh.censys_v2_api_counter+=1
-            mh.logger.debug(f"\n\n#### TOTAL CENSYS API CALLS NOW {mh.censys_v2_api_counter}! \n\n")
-            if res.status_code == 200:
-                raw = json.loads(res.text)
-                if mh.debugging:
-                    mh.logger.debug(f"Results for {cert}: \n\n{raw}")
-            else:
-                mh.logger.error(f"Error getting cert {cert}. Status: {res.status_code} - {res}")
-                return raw
-        except Exception as e:
-            mh.logger.error(f"Error getting cert {cert}: {e}")
-            return raw
-
-    #### FOR DEBUGGING
-    else:
+    if not mh.do_it_live:
+        #### FOR DEBUGGING
         mh.logger.info(f"do_it_live==False, using dummy data")
         raw = {"fill_this": "with whatever dummy cert data you want to pull from the certificates endpoint."}
+        return raw
+
+    mh.logger.info(f"Using LIVE API query to reach out to Censys and get certificate data...")
+    try:
+        rate_limit = mh.censys_v1_rate
+        # Sleep {rate_limit} seconds for each time the search is run
+        helper.rate_respect(mh, mh.search_time, rate_limit)
+        mh.search_time = time() 
+        res = requests.get(url, auth=auth)
+        mh.censys_v2_api_counter+=1
+        mh.logger.debug(f"\n\n#### TOTAL CENSYS API CALLS NOW {mh.censys_v2_api_counter}! \n\n")
+        if res.status_code == 200:
+            raw = json.loads(res.text)
+            if mh.debugging:
+                mh.logger.debug(f"Results for {cert}: \n\n{raw}")
+        else:
+            mh.logger.error(f"Error getting cert {cert}. Status: {res.status_code} - {res}")
+            return False
+    except Exception as e:
+        mh.logger.error(f"Error getting cert {cert}: {e}")
+        return False
+
 
     return raw
 
@@ -275,7 +270,52 @@ def censys_v2_search_cert_hosts(mh, cert):
 
     return ips
 
-def censys_v2_search_ip(mh, event, seed, host_obj):
+def censys_v2_search_ip(mh, host_obj):
+    ip = misphandler.get_attr_val_by_rel(host_obj, 'host-ip')
+    service = "censys-v2"
+
+    mh.logger.debug(f"Getting raw JSON data from Censys for host {ip}")
+    raw = {}
+    url = f"https://search.censys.io/api/v2/hosts/{ip}"
+    auth = (mh.censys_v2_id, mh.censys_v2_secret)
+    
+    if not mh.do_it_live:
+        #### FOR DEBUGGING
+        mh.logger.debug(f"do_it_live==False - using dummy data")
+        raw = {'code':200,'status':'OK','result':{'ip':f"{ip}", 'debugging': f"NO DUMMY DATA RETURNED FOR {ip}"}}
+        return raw['result']
+
+    fresh_json = misphandler.check_json_freshness(mh, host_obj, service)
+    if fresh_json:
+        return fresh_json
+
+    mh.logger.debug(f"Discovered no fresh JSON blobs that are appropriate for reuse.")
+    mh.logger.debug(f"Using LIVE API query to reach out to Censys and get IP data...")
+
+    try: 
+        rate_limit = mh.censys_v2_rate
+        # Sleep {rate_limit} seconds for each time the search is run
+        helper.rate_respect(mh, mh.search_time, rate_limit)
+        mh.search_time = time()
+        res = requests.get(url, auth=auth)
+        mh.censys_v2_api_counter+=1
+
+        mh.logger.debug(f"\n\n#### TOTAL CENSYS API CALLS NOW {mh.censys_v2_api_counter}! \n\n")
+        if res.status_code == 200:
+            raw = json.loads(res.text)
+            if mh.debugging:
+                mh.logger.debug(f"Results for {ip}: \n\n{raw}")
+        else:
+            # raise Exception(f"Error getting IP {ip}. Status: {res.status_code} - {res}")
+            mh.logger.error(f"Error getting IP {ip}. Status: {res.status_code} - {res}")
+            return False
+    except Exception as e:
+        mh.logger.error(f"Error getting IP {ip}: {e}")
+        return False
+    
+    return raw['result']
+
+def censys_v2_search_ip_old(mh, event, seed, host_obj):
     
     ip = misphandler.get_attr_val_by_rel(host_obj, 'host-ip')
     service = misphandler.get_attr_val_by_rel(seed, 'service')

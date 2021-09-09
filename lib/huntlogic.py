@@ -35,7 +35,7 @@ def auto_blacklist(mh, event):
     for cert in all_certs:
         cert = misphandler.blacklist_check_cert(mh, cert)
     return event
-
+'''
 def cert_pivot(mh, host_obj, event, seed):
 
     host_ip = misphandler.get_attr_val_by_rel(host_obj, 'host-ip')
@@ -181,8 +181,330 @@ def process_cert_ips(mh, all_cert_data, seed, event, host_ip):
     else:
         event = updated_event
     return event
-        
+'''
+def process_host_seed(mh, seed, event):
+    mh.logger.info(f"Geneating hosts from seed {seed.uuid}")
+    seed_service = misphandler.get_attr_val_by_rel(seed, 'service')
+    seed_search = misphandler.get_attr_val_by_rel(seed, 'search-string')
+    ips = helper.run_host_seed(mh, seed_search, seed_service)
+
+    if len(ips) <= 0:
+        mh.logger.error(f"No IPs were found running {seed_service} search {seed_search}.Skipping seed!")
+        return False, False
+
+    # Add all found IPs to seed first
+    mh.logger.debug(f"Found {len(ips)} IPs while searching {seed_service} with seed {seed.uuid}!")
+    seed_found_ips = []
+    seed_ip_attrs = misphandler.get_all_attrs_by_rel(seed, 'found-host')
+    for attr in seed_ip_attrs:
+        if attr.value not in seed_found_ips:
+            seed_found_ips.append(attr.value)
+    for ip in ips:
+        if ip not in seed_found_ips:
+            seed_found_ips.append(ip)
+            mh.logger.info(f"Adding found IP {ip} to seed object {seed.uuid}.")
+            attr = seed.add_attribute('found-host', ip, type='ip-dst', disable_correlation=False, 
+                to_ids=False, pythonify=True)
+            misphandler.update_timestamps(mh, attr)
+        else:
+            for attr in seed_ip_attrs:
+                if attr.value == ip:
+                    misphandler.update_timestamps(mh, attr)
+
+    # Update Object
+    updated_seed = misphandler.update_existing_object(mh, seed)
+    if not updated_seed:
+        mh.logger.error(f"Error attempting to update seed object {seed.uuid} with new found-ips {ips}.")
+        return False, False
+    
+    seed = updated_seed
+
+    # Add Object UUID to mh.processed_objects
+    if seed.uuid not in mh.event_processed_object_uuids:
+        mh.event_processed_object_uuids.append(seed.uuid)
+
+    # Return search results and update seed
+    return ips, seed
+    
 def process_seeds(mh, seeds, event):
+    mh.logger.info(f"Processing {len(seeds)} seeds...")
+    for seed in seeds:
+        mh.run_search = False
+        # Check timer for each seed to make sure we're not running prematurely
+        # Also sets self.run_search to True if it's time to run the seed search again
+        seed = misphandler.check_timer(mh, seed)
+        if not mh.run_search:
+            continue
+        seed_service = misphandler.get_attr_val_by_rel(seed, 'service')
+        if not seed_service:
+            mh.logger.error(f"No service found associated with seed object {seed.uuid}. Skipping seed!")
+            continue
+        seed_search = misphandler.get_attr_val_by_rel(seed, 'search-string')
+        if not seed_search:
+            mh.logger.error(f"No search string found associated with seed object {seed.uuid}. Skipping seed!")
+            continue
+        mh.logger.debug(f"Timer checks have passed. Processing seed for [{seed_service}] - {seed_search}...")
+        # Check if seed_service is active host_seed_service type (e.g. censys-v2, shodan)
+        if seed_service in mh.host_seed_services:
+            mh.logger.debug(f"{seed_service} service is used to generate host seeds.")
+            ips, seed = process_host_seed(mh, seed, event)
+            # if returned false, no IPs were found or something failed and we should skip
+            if not ips:
+                continue
+
+            # Collects host_objects into mh.event_new_objects for further processing.
+            event = collect_host_objects(mh, ips, event)
+    return event
+
+def collect_host_objects(mh, ips, event):
+    mh.logger.info(f"Collecting host objects for {len(ips)} discovered hosts: {ips}.")
+    blocks = misphandler.get_local_blocks(mh, event)
+    mh.logger.debug(f"All blocks: {blocks}")
+
+    # Loop through each IP discovered
+    for ip in ips:
+        # Check IP against local and gloabl blocks
+        if helper.check_block(mh, ip, blocks):
+            continue
+        mh.logger.info(f"Processing IP {ip}")
+        # Get existing misphunter-host object or create new one
+        host_obj = misphandler.get_host_obj(mh, ip, event)
+        # NOTE: host_obj returns .is_new=True if it's a newly built host object or a clone
+        #   returns .is_new=False if it already existed in this event
+        if not host_obj:
+            mh.logger.error(f"After processing IP {ip} with get_host_obj() something still managed to go wrong. "
+                "Skipping this host.")
+            continue
+
+        if host_obj.uuid not in mh.event_new_object_uuids:
+            mh.logger.info(f"Collected host_obj {host_obj.uuid} for further processing. Adding to mh.event_new_objects!")
+            mh.event_new_object_uuids.append(host_obj.uuid)
+            mh.event_new_objects.append(host_obj)
+
+        # If we don't process the host now and it shows up again in the next seed search, it'll create a duplicate object
+        event = process_host(mh, host_obj, event)
+
+    mh.logger.info(f"Found {len(mh.event_new_object_uuids)} hosts total.")        
+    return event
+
+def process_event_new_objects(mh, event):
+
+    for obj in mh.event_new_objects:
+        if obj.name == "misphunter-host":
+            if obj.uuid not in mh.event_processed_object_uuids:
+                mh.logger.debug(f"Found new {obj.name} object to process!")
+                # process_host is where you extract IOCs, compare dicts, 
+                # then add it to the event or update it if it already exists
+                event = process_host(mh, obj, event)
+            
+        elif obj.name == "misphunter-cert":
+            if obj.uuid not in mh.event_processed_object_uuids:
+                mh.logger.debug(f"Found new {obj.name} object to process!")
+                mh.logger.debug(f"Normally I'd be processing {obj.name} object {obj.uuid} now...")
+                # process_cert is where you check associated IPs, blacklist if too verbose,
+                # then add it to the event or update it if it already exists
+                # event = process_cert(mh, obj, event)
+
+        # TODO FUTURE-PROOF
+        # elif obj.name == "misphunter-dns":
+        #     if obj.uuid not in mh.event_processed_object_uuids:
+        #         process_dns(mh, obj, event)
+        # elif obj.name == "misphunter-malware":
+        #     if obj.uuid not in mh.event_processed_object_uuids:
+        #         process_malware(mh, obj, event)
+        
+        else:
+            mh.logger.info(f"Object type {obj.name} is unknown. This should not happen. Skipping/removing")
+
+        mh.event_new_objects.remove(obj)
+        if obj.uuid in mh.event_new_object_uuids:
+            mh.event_new_object_uuids.remove(obj.uuid)
+        if obj.uuid not in mh.event_processed_object_uuids:
+            mh.logger.debug(f"This should not happen. I did not expect to be adding this UUID right now.")
+            mh.event_processed_object_uuids.append(obj.uuid)
+            
+    if len(mh.event_new_objects) == 0:
+        return event
+    done = process_event_new_objects(mh, event)
+    if done:
+        mh.logger.info(f"Finished processing new objects!")
+        return event
+
+def process_host(mh, host_obj, event):
+    mh.logger.info(f"Processing host object {host_obj.uuid}")
+    # Enrich the host object by extracting IOCs, comparing changes, etc.
+    host_obj = helper.enrich_host_obj(mh, host_obj)
+
+    # host_obj.is_new if it's newly built or if it was cloned from another event.
+    # If this host object is new to this event, add it to the event and get the latest version of the event.
+    if host_obj.is_new:
+        added_obj = event.add_object(host_obj, pythonify=True)
+        updated_event = misphandler.update_event(mh, event)
+        if not updated_event:
+            mh.logger.error(f"Error updating event {event.id}. Returned False instead of MISPEvent Object. Using "
+                "pre-existing event going forward.")
+        else:
+            event = updated_event
+
+        mh.logger.info(f"Processed new host_obj {added_obj.uuid}. Adding to mh.event_processed_object_uuids!")
+        mh.event_processed_object_uuids.append(added_obj.uuid)
+
+
+    # If this host object is not new to this event update the object, then re-pull the whole event for good measure.
+    else:
+        updated_object = misphandler.update_existing_object(mh, host_obj)
+        if not updated_object:
+            mh.logger.error(f"Error updating existing object {host_obj.uuid} in event {event.id}. Returned False "
+                "instead of MISPEvent Object.")
+        else:
+            mh.logger.info(f"Processed existing host_obj {updated_object.uuid}. Adding to mh.event_processed_object_uuids!")
+            mh.event_processed_object_uuids.append(updated_object.uuid)            
+
+            host_obj = updated_object
+            updated_event = misphandler.get_event(mh, host_obj.event_id)
+            if not updated_event:
+                mh.logger.error(f"SIMPLY GETTING event {host_obj.event_id} FAILED. Returned False instead "
+                    "of MISPEvent Object. Using pre-existing event going forward.")
+            else:
+                # Update the global "existing lists" every time there's a successful MISPObject-only update
+                event = updated_event
+                mh.event_hosts = misphandler.get_event_objects(mh, event, 'misphunter-host')
+                mh.event_seeds = misphandler.get_event_objects(mh, event, 'misphunter-seed')
+                mh.event_certs = misphandler.get_event_objects(mh, event, 'misphunter-cert')
+                mh.event_dns = misphandler.get_event_objects(mh, event, 'misphunter-dns')
+                mh.event_malware = misphandler.get_event_objects(mh, event, 'misphunter-malware')
+
+    # Collect pivot objects and send to mh.event_new_objects
+    if mh.cert_pivoting:
+        event = collect_pivot_objects(mh, host_obj, event, pivot="extracted-certificate")
+    
+    return event
+
+def collect_pivot_objects(mh, obj, event, pivot=""):
+    mh.logger.info(f"Collecting pivot objects from {obj.name} object for pivot type {pivot}")
+    min_epoch = int(time()) - (mh.update_threshold * 60 * 60)
+    attrs = misphandler.get_all_attrs_by_rel(obj, pivot)
+    for attr in attrs:
+        if int(attr.last_seen.timestamp()) > min_epoch:
+            attr.value
+            if pivot == "extracted-certificate":
+                # if we are pivoting on an extracted-certificatre, this will generate
+                # a misphunter-cert object
+                mh.logger.debug(f"Collecting pivot objects for {pivot}...")
+                pivot_obj = helper.get_cert_obj(mh, attr.value, obj, event)
+            elif pivot == "cert-ip":
+                # if we are pivoting on a cert-ip, this will generate a misphunter-host object
+                mh.logger.debug(f"Collecting pivot objects for {pivot}...")
+                pivot_obj = misphandler.get_host_obj(mh, event, attr.value)
+            else:
+                mh.logger.warning(f"Received pivot {pivot} but I don't know how to process that!")
+                pivot_obj = False
+
+            if not pivot_obj:
+                mh.logger.info(f"Unable to find or build object for {attr.value}. Skipping!")
+                continue
+
+            blacklisted = misphandler.get_attr_val_by_rel(pivot_obj, 'blacklisted')
+            if int(blacklisted) == 1:
+                mh.logger.info(f"Extracted {pivot_obj.name} object {pivot_obj.uuid} is blacklisted. Skipping!")
+                continue
+
+            if pivot_obj.uuid not in mh.event_processed_object_uuids:
+                '''
+                # process the object
+                if pivot_obj.name == "misphunter-host":
+                    event = process_host(mh, pivot_obj, event)
+                elif pivot_obj.name == "misphunter-cert":
+                    mh.logger.debug(f"Normally I'd process the cert here...")
+                    # event = process_cert(mh, pivot_obj, event)
+                '''
+                if pivot_obj.uuid not in mh.event_new_object_uuids:
+                    mh.logger.info(f"Adding {pivot_obj.name} object {pivot_obj.uuid} to mh.event_new_objects for further processing!")
+                    mh.event_new_objects.append(pivot_obj)
+                    mh.event_new_object_uuids.append(pivot_obj.uuid)
+            else:
+                mh.logger.debug(f"{pivot_obj.name} object {pivot_obj.uuid} has already been processed...")
+                    
+            
+'''
+def process_hosts_kinda_old(mh, ips, event):
+
+    mh.logger.info(f"Processing {len(ips)} discovered hosts: {ips}.")
+    blocks = misphandler.get_local_blocks(mh, event)
+    mh.logger.debug(f"All blocks: {blocks}")
+
+    # Loop through each IP discovered
+    for ip in ips:
+        # Check IP against local and gloabl blocks
+        if helper.check_block(mh, ip, blocks):
+            continue
+        mh.logger.info(f"Processing IP {ip}")
+        # Get existing misphunter-host object or create new one
+        host_obj = misphandler.get_host_obj(mh, ip, event)
+        # NOTE: host_obj returns .is_new=True if it's a newly built host object or a clone
+        #   returns .is_new=False if it already existed in this event
+        if not host_obj:
+            mh.logger.error(f"After processing IP {ip} with get_host_obj() something still managed to go wrong. "
+                "Skipping this host.")
+            continue
+
+        # Enrich the host object by extracting IOCs, comparing changes, etc.
+        host_obj = helper.enrich_host_obj(mh, host_obj)
+
+        # host_obj.is_new if it's newly built or if it was cloned from another event.
+        # If this host object is new to this event, add it to the event and get the latest version of the event.
+        if host_obj.is_new:
+            added_obj = event.add_object(host_obj, pythonify=True)
+            updated_event = misphandler.update_event(mh, event)
+            if not updated_event:
+                mh.logger.error(f"Error updating event {event.id}. Returned False instead of MISPEvent Object. Using "
+                    "pre-existing event going forward.")
+            else:
+                event = updated_event
+
+            if added_obj.uuid not in mh.event_new_object_uuids:
+                mh.logger.info(f"Created new host_obj {added_obj.uuid}. Adding to mh.event_new_objects!")
+                mh.event_new_object_uuids.append(added_obj.uuid)
+                mh.event_new_objects.append(added_obj)
+            else:
+                mh.logger.warning(f"Created new host_obj {added_obj.uuid} but it was already in mh.event_new_object_uuids."
+                    "THIS SHOULD NOT HAPPEN!")
+
+        # If this host object is not new to this event update the object, then re-pull the whole event for good measure.
+        else:
+            updated_object = misphandler.update_existing_object(mh, host_obj)
+            if not updated_object:
+                mh.logger.error(f"Error updating existing object {host_obj.uuid} in event {event.id}. Returned False "
+                    "instead of MISPEvent Object.")
+            else:
+                
+                if updated_object.uuid not in mh.event_new_object_uuids:
+                    mh.logger.info(f"Updated host_obj {updated_object.uuid}. Adding to mh.event_new_objects!")
+                    mh.event_new_object_uuids.append(updated_object.uuid)
+                    mh.event_new_objects.append(updated_object)
+                else:
+                    mh.logger.warning(f"Created new host_obj {updated_object.uuid} but it was already in mh.event_new_object_uuids."
+                        "THIS SHOULD NOT HAPPEN!")
+
+                host_obj = updated_object
+                updated_event = misphandler.get_event(mh, host_obj.event_id)
+                if not updated_event:
+                    mh.logger.error(f"SIMPLY GETTING event {host_obj.event_id} FAILED. Returned False instead "
+                        "of MISPEvent Object. Using pre-existing event going forward.")
+                else:
+                    # Update the global "existing lists" every time there's a successful MISPObject-only update
+                    event = updated_event
+                    mh.event_hosts = misphandler.get_event_objects(mh, event, 'misphunter-host')
+                    mh.event_seeds = misphandler.get_event_objects(mh, event, 'misphunter-seed')
+                    mh.event_certs = misphandler.get_event_objects(mh, event, 'misphunter-cert')
+                    mh.event_dns = misphandler.get_event_objects(mh, event, 'misphunter-dns')
+                    mh.event_malware = misphandler.get_event_objects(mh, event, 'misphunter-malware')
+
+    # Cert pivoting used to take place here - moving it to a simpler area
+    return event
+
+
+def process_seeds_old(mh, seeds, event):
     for seed in seeds:
         mh.run_search = False
         # Check timer for each seed to make sure we're not running prematurely
@@ -259,7 +581,7 @@ def process_seeds(mh, seeds, event):
     mh.logger.debug(f"Finished processing {len(seeds)} seeds!")
     return event
 
-def process_hosts(mh, event, seed, ips):
+def process_hosts_old(mh, event, seed, ips):
 
     # TODO - NOTE - BY PASSING SEED THIS WAY I BELIEVE I'M LIMITING IT TO ONLY 
     # USING THE SERVICE THAT THE ORIGINAL SEED BELONGED TO
@@ -343,7 +665,7 @@ def process_hosts(mh, event, seed, ips):
                 event = updated_event
 
     return event
-
+'''
 def process_new_tags(mh, event):
 
     mh.logger.info(f"Tagging new discoveries and untagging old ones.")

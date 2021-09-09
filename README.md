@@ -47,6 +47,7 @@ Make sure you've got the right dependencies. I might make this into a `requireme
 pymisp
 iocextract
 dateparser
+shodan
 ```
 
 That's it! The initial setup is complete.

@@ -151,22 +151,26 @@ class MISPHunter():
                 f"PROCESSING EVENT ID {event_id}\n# "
                 f"{event.info}"
                 f"\n###############################################################################\n\n")
-            misphandler.get_event_hosts(self, event)
+            mh.event_hosts = misphandler.get_event_objects(self, event, 'misphunter-host')
             # Above sets global lists of MISPObjects like mh.event_hosts = [<misphunter-host>, <misphunter-host>]
-            misphandler.get_event_seeds(self, event)
+            mh.event_seeds = misphandler.get_event_objects(self, event, 'misphunter-seed')
             # mh.event_seeds = [<misphunter-seed>]
-            misphandler.get_event_certs(self, event)
+            mh.event_certs = misphandler.get_event_objects(self, event, 'misphunter-cert')
             # mh.event_certs = [<misphunter-cert>]
-
             # TODO - still haven't built these objects yet
             #   Issues #15 and #16
-            misphandler.get_event_dns(self, event)
+            mh.event_dns = misphandler.get_event_objects(self, event, 'misphunter-dns')
             # mh.event_dns = [<misphunter-dns>]
-            misphandler.get_event_malware(self, event)
+            mh.event_malware = misphandler.get_event_objects(self, event, 'misphunter-malware')
             # mh.event_malware = [<misphunter-malware>]
+
+            # Reset updated objects and found pivots for each event processed
+            mh.event_new_objects = []
+            mh.event_new_object_uuids = []
+            mh.event_processed_object_uuids = []
             
             # First, process seeds
-            event = huntlogic.process_seeds(self, seeds, event)
+            # event = huntlogic.process_seeds(self, seeds, event)
             # process_seeds -> for each seed:
             #   process_hosts -> for each host IP found by the seed search:
             #       cert_pivot -> get all certs living on host. For each cert, create a misphunter-cert object. 
@@ -174,6 +178,14 @@ class MISPHunter():
             #           IMPORTANT: IF CERT IS TRASH/BLACKLISTED, SKIP PROCESS_CERT_IPS
             #           process_cert_ips -> For all the IPs found in each cert,
             #               process_hosts with the original seed and the IPs found related to that cert.
+
+            ### Simplified logic
+            # Process seeds - this will any host objects the seeds discovered to mh.event_new_objects
+            huntlogic.process_seeds(self, seeds, event)
+            # Continue processing new_event_objects until they're exhausted
+            # Processing host objects should generate cert objects, and vice-versa
+            event = huntlogic.process_event_new_objects(self, event)
+            
 
             # TODO - Issue #3
             # Second, process all enabled misphunter objects for this event that were not touched after process_seeds()

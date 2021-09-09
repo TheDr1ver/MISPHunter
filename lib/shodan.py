@@ -170,7 +170,66 @@ def shodan_search(mh, search):
 
     return ips
 
-def shodan_search_ip(mh, event, seed, host_obj):
+def shodan_search_ip(mh, host_obj):
+    ip = misphandler.get_attr_val_by_rel(host_obj, 'host-ip')
+    service = "shodan"
+
+    mh.logger.debug(f"Getting raw JSON data for {ip}")
+    raw = {}
+    shodan_api = Shodan(mh.shodan_key)
+
+    if not mh.do_it_live:
+        ### FOR DEBUGGING
+        mh.logger.debug(f"do_it_live==False - using dummy data")
+        raw = {'region_code': '16', 'tags': ['cloud'], 'ip': 3333295395, 'area_code': None, 'domains': ['linode.com'], 'postal_code': None, 'dma_code': None, 'org': 'Linode, LLC', 'ip_str': '192.168.1.100'}
+        return raw
+
+    # Get rate_limit for this service
+    rate_limit = mh.shodan_rate
+    fresh_json = misphandler.check_json_freshness(mh, host_obj, service)
+    if fresh_json:
+        return fresh_json
+    
+    mh.logger.debug(f"Discovered no fresh JSON blobs that are appropriate for reuse.")
+    mh.logger.debug(f"Using LIVE API query to reach out to Shodan and get IP data...")
+    
+    try: 
+        # Sleep {rate_limit} seconds for each time the search is run
+        helper.rate_respect(mh, mh.search_time, rate_limit)
+        mh.search_time = time() 
+        raw = shodan_api.host(ip)
+        mh.shodan_api_counter+=1
+        mh.logger.debug(f"\n\n#### TOTAL SHODAN API CALLS NOW {mh.shodan_api_counter}! \n\n")
+        # raw = json.loads(res)
+        if mh.debugging:
+            mh.logger.debug(f"Results for {ip}: \n\n{raw}")
+        
+    except shodan_api.APIError:
+        mh.logger.error(f"Error - API timed out. Trying again...")
+        try:
+            helper.rate_respect(mh, mh.search_time, rate_limit+1)
+            mh.search_time = time()
+            raw = shodan_api.host(ip)
+            mh.shodan_api_counter+=1
+            mh.logger.debug(f"\n\n#### TOTAL SHODAN API CALLS NOW {mh.shodan_api_counter}! \n\n")
+            # raw = json.loads(res)
+            if mh.debugging:
+                mh.logger.debug(f"Results for {ip}: \n\n{raw}")
+
+        except Exception as e:
+            mh.logger.error(f"Error getting IP {ip}: {e}")
+            # raw = {"error": "IP Not Found"}
+            return False
+
+    except Exception as e:
+        mh.logger.error(f"Error getting IP {ip}: {e}")
+        # raw = {"error": "IP Not Found"}
+        return False
+    
+    return raw
+    
+
+def shodan_search_ip_old(mh, event, seed, host_obj):
 
     ip = misphandler.get_attr_val_by_rel(host_obj, 'host-ip')
     service = misphandler.get_attr_val_by_rel(seed, 'service')
