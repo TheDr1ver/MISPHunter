@@ -34,23 +34,14 @@ def get_logger():
 
 def set_the_stage(mh, objs, event):
     mh.logger.info(f"Setting the stage with objects...")
-
-    obj_index_mapping = {
-        "misphunter-seed": "search-string",
-        "misphunter-host": "host-ip",
-        "misphunter-cert": "cert-sha256",
-        "misphunter-dns": "domain",
-        "misphunter-malware": "sha256"
-    }
-
     for obj in objs:
         # get value of object's "index" or unique value
         object_name = obj.name
-        if obj.name not in obj_index_mapping:
+        if obj.name not in mh.obj_index_mapping:
             mh.logger.error(f"{obj.name} object not a known type for pivots. Skipping!")
             # TODO update stats for skipped stage objects
             continue
-        pivot_rel = obj_index_mapping[obj.name]
+        pivot_rel = mh.obj_index_mapping[obj.name]
         value = misphandler.get_attr_val_by_rel(obj, pivot_rel)
         if not value:
             mh.logger.error(f"{obj.name} object had no pivot value. Skipping!")
@@ -64,38 +55,101 @@ def set_the_stage(mh, objs, event):
 
 def stage_object(mh, object_name, pivot_rel, value, event):
     mh.logger.info(f"Staging {object_name} object using value {value}...")
-    obj = False
+    found_obj = False
+    cloned_obj = False
+    new_obj = False
     # Look to see if the object exists in the event
-    # If so: 
-    #   update timestamps for pivot_rel attr matching value
-    #   obj = update object in MISP
-    #   retrieve updated event
+    relevant_objects = event.get_objects_by_name(object_name)
+    for obj in relevant_objects:
+        relevant_attrs = obj.get_attributes_by_relation(pivot_rel)
+        if found_obj:
+            break
+        for attr in relevant_attrs:
+            if attr.value == value:
+                found_obj = obj
+                pivot_attr = attr
+                break
 
-    # Look to see if the object exists in the instance, given the 
-    #   new_discovery_threshold window
-    # If so:
-    #   clone object
-    #   update timestamps for pivot_rel attr matching value
-    #   obj = add cloned object to MISP event
-    #   update MISP event
-    #   retrieve updated event
+    # If we found a valid object already attached to this event: 
+    if found_obj:
+        mh.logger.info(f"Found existing {object_name} object [{found_obj.uuid}] "
+            f"for event {event.info}... Using that!")
+        # update timestamps for pivot_rel attr matching value
+        misphandler.update_timestamps(mh, pivot_attr)
+        # obj = update object in MISP
+        updated_obj = misphandler.update_existing_object(mh, found_obj)
+        # retrieve updated event
+        event = misphandler.get_event(mh, event.id)
+        updated_obj.is_new = False
+        updated_obj.is_clone = False
 
-    # If obj == False (not in event, not in instance):
-    #   create bare minimum, brand new MISP object
-    #   obj = misphandler.create_obj_skeleton(mh, value, object_name)
-    #   obj = add new object to MISP event
-    #   update MISP event
-    #   retrieve updated event
+    # If we didn't find a suitable object already in this event...
+    else:
+        # Look to see if the object exists in the instance, using the 
+        #   new_discovery_threshold window
+        # If so:
+        #   clone object
+        #   update timestamps for pivot_rel attr matching value
+        cloned_obj = misphandler.search_recent_updated_objects(mh, event, 
+            object_name=object_name, value=value, rel=pivot_rel, 
+            timeframe=mh.new_discovery_threshold)
 
+    # If it was successfully cloned just now...
+    if cloned_obj:
+        mh.logger.info(f"Successfully cloned {object_name} object "
+            f"[{cloned_obj.uuid}] into event {event.info}... Using that!")
+        # ...all the timestamps will have just been updated
+        # add the cloned object to MISP event
+        updated_obj = event.add_object(cloned_obj)
+        # update MISP event
+        updated_event = misphandler.update_event(mh, event)
+        if updated_event:
+            # set updated event for return
+            event = updated_event
+        updated_obj.is_new = False
+        updated_obj.is_clone = True
+        
+    if not cloned_obj and not found_obj:
+        # Object does not exist anywhere in this instance
+        # create bare minimum, brand new MISP object
+        new_obj = misphandler.create_obj_skeleton(mh, object_name=object_name,
+            value=value, rel=pivot_rel)
+        mh.logger.info(f"Succesfully created new {object_name} object "
+            f"[{new_obj.uuid}] into event {event.info}!")
+        # add the newly-built object to MISP event
+        updated_obj = event.add_object(new_obj)
+        # Update MISP event
+        updated_event = misphandler.update_event(mh, event)
+        if updated_event:
+            # set updated event for return
+            event = updated_event
+        updated_obj.is_new = True
+        updated_obj.is_clone = False
+
+    if not updated_obj:
+        mh.logger.warning(f"Something went wrong staging {object_name} object "
+            f"using value {value}. This should be investigated")
+        return event
+    
     # Check if the object is blacklisted
-    # If blacklisted:
-    #     return event
-    # else: 
-    #   if obj.uuid not in mh.event_processed_object_uuids:
-    #       add obj to mh.staged_objects
-    # return event
+    blacklisted = misphandler.get_attr_val_by_rel(updated_obj, 'blacklisted')
+    if int(blacklisted) == 1:
+        mh.logger.info(f"{object_name} object is blacklisted! Not adding it "
+            f"to the processing stage!")
+        return event
+
+    # If the object has been updated and it's not blacklisted, stage it 
+    # for further processing...
+    if updated_obj.uuid not in mh.event_processed_object_uuids:
+        mh.logger.info(f"Successfully added {object_name} object "
+            f"to the processing stage!")
+        mh.event_staged_objects.append(updated_obj)
+
+    return event
+
 
 def process_stage(mh, event):
+    # TODO TOMORROW!
     mh.logger.info(f"Processing the current stage")
     # continue processing event_staged_objects until they're exhausted
     # as each event is processed from the stage, add its UUID to 
@@ -103,6 +157,8 @@ def process_stage(mh, event):
     for obj in mh.event_staged_objects:
         # if obj.name == "misphunter-seed":
         #     event = process_seed(mh, obj, event)
+        # run search if ready, update timestamps, save found-hosts
+        # stage_object for each pivots
         if obj.name == "misphunter-host":
             event = process_host(mh, obj, event)
             # host is inspected for newness, 

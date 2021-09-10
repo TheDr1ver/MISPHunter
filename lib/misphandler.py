@@ -32,6 +32,28 @@ def get_logger():
 '''
 # _log = get_logger()
 
+##################################
+#### 2-Stage Approach Functions
+###################################
+
+def create_obj_skeleton(mh, object_name="", value="", rel=""):
+    
+    mh.logger.info(f"Building {object_name} skeleton...")
+    template = mh.misp.get_raw_object_template(object_name)
+    obj = MISPObject(object_name, misp_objects_template_custom=template)
+    obj.is_new = True
+    obj.add_attribute(rel, value, type=mh.rel_type_mapping[rel], disable_correlation=False, to_ids=False, pythonify=True)
+    obj.add_attribute('blacklisted', '0', type="boolean", disable_correlation=True, to_ids=False, pythonify=True)
+
+    # Update timestamps
+    for attr in obj.Attribute:
+        update_timestamps(mh, attr)
+
+    return obj
+
+
+###################################
+
 def add_ips_to_cert_obj(mh, cert_data, ips):
     existing_ips = []
     ip_attrs = cert_data.get_attributes_by_relation('cert-ip')
@@ -561,7 +583,7 @@ def get_local_blocks(mh, event):
 
     return local_blocks
 
-def search_recent_updated_objects(mh, event, object_name="", value="", timeframe=0):
+def search_recent_updated_objects(mh, event, object_name="", value="", rel="", timeframe=0):
     # This is called by the *_search_ip section of various plugins.
     # It is also called by get_host_obj
     #   It returns False if no object was discovered that was updated 
@@ -569,14 +591,6 @@ def search_recent_updated_objects(mh, event, object_name="", value="", timeframe
     #   returns MISPObject, which skips all the enrichment processes it
     #   would otherwise go through.
     newest_obj = False
-
-    obj_name_key_map = {
-        "misphunter-host": "host-ip",
-        "misphunter-cert": "cert-sha256",
-        # FUTURE-PROOFING
-        "misphunter-dns": "domain",
-        "misphunter-malware": "sha256"
-    }
 
     min_epoch = int(time()) - (timeframe * 60 * 60)
     # if timeframe set to 0, search all time (used for things like certs that shouldn't change)
@@ -592,7 +606,6 @@ def search_recent_updated_objects(mh, event, object_name="", value="", timeframe
         return False
 
     for obj in misphunter_objs:
-        rel = obj_name_key_map[object_name]
         attr_val = get_attr_val_by_rel(obj, rel)
         attr_obj = get_attr_obj_by_rel(obj, rel)
         if not attr_obj:
@@ -614,6 +627,7 @@ def search_recent_updated_objects(mh, event, object_name="", value="", timeframe
             mh.logger.debug(f"Last_seen was {obj_last_seen} and we need it to be greater than {min_epoch} to "
                 f"use it.")
             continue
+
         mh.logger.info(f"Looks like we're good to go with {obj.uuid}")
         mh.logger.debug(f"Last_seen was {obj_last_seen} and we need it to be less than {min_epoch} to "
             f"skip using it again")

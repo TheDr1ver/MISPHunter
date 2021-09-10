@@ -146,6 +146,10 @@ class MISPHunter():
 
         # Loop through events one at a time
         for event_id, seeds in all_event_seeds.items():
+            ### DEBUGGING
+            if str(event_id) != "3978":
+                continue
+
             event = misphandler.get_event(self, event_id)
             self.logger.info(f"\n###############################################################################\n\n# "
                 f"PROCESSING EVENT ID {event_id}\n# "
@@ -170,6 +174,34 @@ class MISPHunter():
             mh.event_staged_objects = []
             mh.event_processed_object_uuids = []
 
+            mh.obj_index_mapping = {
+                "misphunter-seed": "search-string",
+                "misphunter-host": "host-ip",
+                "misphunter-cert": "cert-sha256",
+                "misphunter-dns": "domain",
+                "misphunter-malware": "sha256"
+            }
+
+            mh.rel_type_mapping = {
+                "search-string": "text",
+                "host-ip": "ip-dst",
+                "cert-sha256": "x509-fingerprint-sha256",
+                "domain": "domain",
+                "sha256": "sha256"
+            }
+
+            mh.obj_pivot_mapping = {
+                "misphunter-seed": {
+                    "found-host" : "misphunter-host"
+                },
+                "misphunter-host": {
+                    "extracted-certificate": "misphunter-cert",
+                    "extracted-domain": "misphunter-domain"
+                },
+                "misphunter-cert": {
+                    "cert-ip": "misphunter-host"
+                }
+            }
             
             # First, process seeds
             # event = huntlogic.process_seeds(self, seeds, event)
@@ -190,6 +222,9 @@ class MISPHunter():
 
             ### 2-Stage Process
             event = huntlogic.set_the_stage(self, seeds, event)
+            self.logger.debug(f"Initial processing stage before being processed:\n\n"
+                f"{pformat(mh.event_staged_objects)}")
+            
             # continue processing event_staged_objects until they're exhausted
             # as each event is processed from the stage, add its UUID to 
             #   event_processed_object_uuids and remove it from event_staged_objects
