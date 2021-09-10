@@ -43,6 +43,26 @@ def get_logger(verbose=False):
 
 # _log = get_logger()
 
+#######################################
+#### Stage 2 Functions
+########################################
+
+def log_stage_details(mh):
+    stage_details = []
+    for obj in mh.event_staged_objects:
+        index_attr = obj.get_attributes_by_relation(
+                mh.obj_index_mapping[obj.name])[0]
+        obj_index = index_attr.value
+        stage_detail = f"{obj.name} - [{obj.uuid}] - {obj_index}"
+        stage_details.append(stage_detail)
+
+    mh.logger.debug(f"Initial processing stage before being processed:\n\n"
+        f"{pformat(stage_details)}")
+    mh.logger.debug(f"Already-processed uuids:\n\n"
+        f"{pformat(mh.event_processed_object_uuids)}")
+
+#########################################
+
 def add_iocs_to_object(mh, iocs, checksum, host_obj):
     mh.logger.info(f"Processing IOCs to add them to host object: \n{iocs}")
     # Get existing IOCs from object

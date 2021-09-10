@@ -147,8 +147,9 @@ class MISPHunter():
         # Loop through events one at a time
         for event_id, seeds in all_event_seeds.items():
             ### DEBUGGING
-            if str(event_id) != "3978":
-                continue
+            if mh.debugging:
+                if str(event_id) != "3978":
+                    continue
 
             event = misphandler.get_event(self, event_id)
             self.logger.info(f"\n###############################################################################\n\n# "
@@ -222,16 +223,24 @@ class MISPHunter():
 
             ### 2-Stage Process
             event = huntlogic.set_the_stage(self, seeds, event)
-            self.logger.debug(f"Initial processing stage before being processed:\n\n"
-                f"{pformat(mh.event_staged_objects)}")
+
+            if mh.debugging:
+                helper.log_stage_details(mh)
             
             # continue processing event_staged_objects until they're exhausted
             # as each event is processed from the stage, add its UUID to 
             #   event_processed_object_uuids and remove it from event_staged_objects
-            event = huntlogic.process_stage(self, event)
+            while len(mh.event_staged_objects) > 0:
+                mh.logger.debug(f"{len(mh.event_staged_objects)} objects "
+                    f"remaining on stage.")
+                for obj in mh.event_staged_objects:
+                    event = huntlogic.process_stage_object(self, obj, event)
+
+            ### DEBUG
+            return True
             
 
-            # TODO - Issue #3
+            # TODO - Issue #3 NOTE: This is probably addressed now by extract_pivots()
             # Second, process all enabled misphunter objects for this event that were not touched after process_seeds()
             #   Might want to handle this differently than I originally thought. 
             #   If a host no longer shows up in a seed search, how can we tell if it's still related?

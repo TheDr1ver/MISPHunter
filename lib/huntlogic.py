@@ -90,6 +90,9 @@ def stage_object(mh, object_name, pivot_rel, value, event):
         # If so:
         #   clone object
         #   update timestamps for pivot_rel attr matching value
+        mh.logger.info(f"{object_name} object with {pivot_rel} value of "
+            f"{value} was not found in the current event. Searching the "
+            f"rest of the MISP instance for appropriate objects...")
         cloned_obj = misphandler.search_recent_updated_objects(mh, event, 
             object_name=object_name, value=value, rel=pivot_rel, 
             timeframe=mh.new_discovery_threshold)
@@ -138,42 +141,188 @@ def stage_object(mh, object_name, pivot_rel, value, event):
             f"to the processing stage!")
         return event
 
-    # If the object has been updated and it's not blacklisted, stage it 
-    # for further processing...
-    if updated_obj.uuid not in mh.event_processed_object_uuids:
+    # If the object has been updated and it's not blacklisted,
+    # check if it's already been processed
+    if updated_obj.uuid in mh.event_processed_object_uuids:
+        mh.logger.info(f"{object_name} object [{updated_obj.uuid}] has "
+            f"already been processed! Not adding it to the processing stage!")
+        return event
+
+    # Make sure this object isn't already staged for processing...
+    staged_uuids = []
+    for obj in mh.event_staged_objects:
+        if obj.uuid not in staged_uuids:
+            staged_uuids.append(obj.uuid)
+
+    if updated_obj.uuid not in staged_uuids:
         mh.logger.info(f"Successfully added {object_name} object "
-            f"to the processing stage!")
+            f"[{updated_obj.uuid}] to the processing stage!")
+        # if mh.debugging:
+        #     mh.logger.debug(f"Staged object info: \n\n"
+        #         f"{pformat(updated_obj.to_dict())}")
         mh.event_staged_objects.append(updated_obj)
+    else:
+        mh.logger.info(f"{object_name} object [{updated_obj.uuid}] is "
+            f"already staged for processing!")
 
     return event
 
+def extract_pivots(mh, obj, event):
+    pivot_map = mh.obj_pivot_mapping[obj.name]
+    for pivot_rel, pivot_obj_name in pivot_map.items():
+        pivot_attrs = misphandler.get_all_attrs_by_rel(obj, pivot_rel)
+        if len(pivot_attrs) > 0:
+            mh.logger.info(f"Extracting {pivot_rel} pivots from {obj.name} "
+                f"object [{obj.uuid}] and sending to stage...")
+        for attr in pivot_attrs:
+            pivot_obj_index_rel = mh.obj_index_mapping[pivot_obj_name]
+            event = stage_object(mh, pivot_obj_name, pivot_obj_index_rel, attr.value, event)
+    return event
 
-def process_stage(mh, event):
-    # TODO TOMORROW!
-    mh.logger.info(f"Processing the current stage")
+def process_stage_object(mh, obj, event):
+    mh.logger.info(f"Processing {obj.name} object [{obj.uuid}] from stage...")
     # continue processing event_staged_objects until they're exhausted
     # as each event is processed from the stage, add its UUID to 
     # mh.event_processed_object_uuids and remove it from mh.event_staged_objects
-    for obj in mh.event_staged_objects:
-        # if obj.name == "misphunter-seed":
-        #     event = process_seed(mh, obj, event)
-        # run search if ready, update timestamps, save found-hosts
-        # stage_object for each pivots
-        if obj.name == "misphunter-host":
-            event = process_host(mh, obj, event)
-            # host is inspected for newness, 
-            # API hit if necessary, IOCs extracted, Dict Compare
-            # various pivot types are pulled & staged
-            #   in this case, 'found-ip' value gets passed to 
-            #   event = stage_object(mh, 'misphunter-host', 'host-ip', value, event)
-            # obj is updated (it already exists in this event because it was in staging)
-            # obj is removed from mh.staged_objects
-            # obj.uuid is added to mh.processed_object_uuids
-            # on to the next object! Loop until empty!
-            
-            
-        # elif obj.name == "misphunter-cert":
-        #     event = process_cert(mh, obj, event)
+    if obj.name == "misphunter-seed":
+        event = process_seed(mh, obj, event)
+    # run search if ready, update timestamps, save found-hosts as 
+    #   misphunter-host skeletons per mh.obj_pivot_mapping
+    # stage_object for each pivot object
+        mh.logger.debug(f"Removing {obj.name} {obj.uuid} from stage.")
+        mh.event_staged_objects.remove(obj)
+        mh.logger.debug(f"Adding {obj.name} {obj.uuid} to processed list.")
+        mh.event_processed_object_uuids.append(obj.uuid)
+        if mh.debugging:
+            helper.log_stage_details(mh)
+
+    # if obj.name == "misphunter-host":
+    #     event = process_host(mh, obj, event)
+        # host is inspected for newness, 
+        # API hit if necessary, IOCs extracted, Dict Compare
+        # various pivot types are pulled & staged
+        #   in this case, 'found-host' value gets passed to 
+        #   event = stage_object(mh, 'misphunter-host', 'host-ip', value, event)
+        # obj is updated (it already exists in this event because it was in staging)
+        # obj is removed from mh.staged_objects
+        # obj.uuid is added to mh.processed_object_uuids
+        # on to the next object! Loop until empty!
+        
+        
+    # elif obj.name == "misphunter-cert":
+    #     event = process_cert(mh, obj, event)
+
+    else:
+        mh.logger.warning(f"Not sure how to  process {obj.name} object "
+            f"{obj.uuid} - removing from stage and continuing...")
+        mh.logger.debug(f"Removing {obj.name} {obj.uuid} from stage.")
+        mh.event_staged_objects.remove(obj)
+        mh.logger.debug(f"Adding {obj.name} {obj.uuid} to processed list.")
+        mh.event_processed_object_uuids.append(obj.uuid)
+        if mh.debugging:
+            helper.log_stage_details(mh)
+
+    return event
+
+def process_seed(mh, seed, event):
+    mh.logger.info(f"Processing seed {seed.uuid} from stage!")
+    run_search, seed = misphandler.check_timer(mh, seed)
+    # If timer checks don't pass, remove this object from the stage and 
+    # skip this seed
+    if not run_search:
+        return event
+    # If run_search is True, it means the seed object was updated.
+    # We need to get a fresh copy of event to return going forward
+    updated_event = misphandler.get_event(mh, event.id)
+    if not updated_event:
+        mh.logger.error(f"Failed getting event {event.id}... This "
+            f"shouldn't happen if your MISP server is alive. Skipping "
+            f"seed {seed.uuid}!")
+        return event
+    event = updated_event
+
+    # Check for basic requirements
+    service = misphandler.get_attr_val_by_rel(seed, 'service')
+    if not service:
+        mh.logger.error(f"No service found associated with seed object "
+            f"{seed.uuid}. Skipping seed!")
+        return event
+
+    search = misphandler.get_attr_val_by_rel(seed, 'search-string')
+    if not search:
+        mh.logger.error(f"No search string found associated with seed object "
+            f"{seed.uuid}. Skipping seed!")
+        return event
+
+    # Check if seed_service is activated
+    if service not in mh.host_seed_services:
+        mh.logger.info(f"{service} is not currently active. Skipping seed "
+            f"{seed.uuid}!")
+        return event
+
+    mh.logger.debug(f"Timer checks have passed! Processing seed for "
+        f"[{service}] - {search}...")
+
+    # Run search and get resulting IPs
+    ips = helper.run_host_seed(mh, search, service)
+    if len(ips) <= 0:
+        mh.logger.info(f"No IPs were found running {service} search {search}. "
+            f"Skipping seed!")
+        return event
+    
+    new_host = False
+    # Add all found IPs to seed first
+    mh.logger.info(f"Found {len(ips)} IPs while searching {service} with seed "
+        f"{seed.uuid}!\n\t\t{ips}")
+    # Collect existing IPs
+    found_hosts = []
+    ip_attrs = misphandler.get_all_attrs_by_rel(seed, 'found-host')
+    for attr in ip_attrs:
+        if attr.value not in found_hosts:
+            found_hosts.append(attr.value)
+
+    # Process IPs returned by the search
+    mh.logger.info(f"Adding new IPs and updating timestamps for prexisting ones.")
+    for ip in ips:
+        if ip not in found_hosts:
+            # Add new IPs
+            found_hosts.append(ip)
+            mh.logger.info(f"Adding found IP {ip} to seed object {seed.uuid}.")
+            new_host = seed.add_attribute('found-host', ip, type='ip-dst',
+                disable_correlation=False, to_ids=False, pythonify=True)
+            misphandler.update_timestamps(mh, new_host)
+        else:
+            # Update timestamps for existing IPs that were returned
+            for attr in ip_attrs:
+                if attr.value == ip:
+                    misphandler.update_timestamps(mh, attr)
+
+    # If any new IPs were found, update the seed object
+    if new_host:
+        updated_seed = misphandler.update_existing_object(mh, seed)
+        # Make sure it updated properly
+        if not updated_seed:
+            mh.logger.error(f"Error attempting to update seed object "
+                f"{seed.uuid} with new hosts: {ips}")
+            mh.logger.error(f"Skipping seed object {seed.uuid}!")
+            return event
+        seed = updated_seed
+    
+    # Get latest updated version of event
+    updated_event = misphandler.get_event(mh, event.id)
+    # Make sure we got the latest event
+    if not updated_event:
+        mh.logger.error(f"Failed getting event {seed.event_id}... This "
+            f"shouldn't happen if your MISP server is alive. Skipping "
+            f"seed {seed.uuid}!")
+        return event
+    event = updated_event
+
+    # Collect pivot objects to send to stage for future processing
+    event = extract_pivots(mh, seed, event)
+
+    mh.logger.info(f"Finished processing seed {seed.uuid}!")
+
     return event
 
 ###################

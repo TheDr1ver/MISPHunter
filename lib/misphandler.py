@@ -309,6 +309,7 @@ def check_timer(mh, seed):
     # Returns seed with updated last_run time (or updated object timestamp in ignoring timers in debugging mode)
     mh.logger.info(f"Checking event timer to see if seed {seed.uuid} is ready to update")
     update_seed_object = False
+    run_search = False
     now = int(time())
 
     last_run = get_attr_val_by_rel(seed, 'last-run')
@@ -360,7 +361,7 @@ def check_timer(mh, seed):
             mh.logger.info(f"ignore_timers flag is set so not updating last_run attribute.")
 
         mh.logger.debug(f"Setting mh.run_search to True...")
-        mh.run_search = True
+        run_search = True
 
     if update_seed_object:
         mh.logger.info(f"Updating MISP event with new run time or frequency.")
@@ -381,9 +382,9 @@ def check_timer(mh, seed):
     
     if mh.ignore_timers:
         mh.logger.info(f"...GOTCHA!! ignore_timers was set to True so all of that meant NOTHING and we're gonna run it anyway!")
-        mh.run_search = True
+        run_search = True
 
-    return seed
+    return run_search, seed
 
 def clone_obj(mh, source_obj, event):
     if str(source_obj.event_id) == str(event.id):
@@ -394,14 +395,21 @@ def clone_obj(mh, source_obj, event):
         source_obj.is_new=False
         return source_obj
     else:
-        mh.logger.info(f"Discovered object [{source_obj.uuid}] has a different event_id ({source_obj.event_id}) than the event we're processing ({event.id}). Creating a new object")
+        mh.logger.info(f"Discovered object [{source_obj.uuid}] has a different "
+            f"event_id ({source_obj.event_id}) than "f"the event we're "
+            f"processing ({event.id}). Creating a new object")
     clone = deepcopy(source_obj)
     clone.uuid = str(uuid.uuid4())
     clone.event_id = event.id
     for attr in clone.Attribute:
         attr.uuid = str(uuid.uuid4())
         attr.event_id = event.id
-        update_timestamps(mh, attr)
+    # Update timestamps for obj type index value
+    if clone.name in mh.obj_index_mapping:
+        obj_index = mh.obj_index_mapping[clone.name]
+        attrs = clone.get_attributes_by_relation(obj_index)
+        for attr in attrs:
+            update_timestamps(mh, attr)
     clone.is_new=True
 
     if 'clones_added' not in mh.run_stats:
@@ -442,12 +450,17 @@ def get_attr_obj_by_rel(obj, rel):
         return False
 
 def get_event(mh, event_id):
-    mh.logger.info(f"Getting full MISPEvent Object for event {event_id}.")
+    mh.logger.debug(f"Getting full MISPEvent Object for event {event_id}.")
     try: 
         event = mh.misp.get_event(event_id, pythonify=True)
     except Exception as e:
         mh.logger.error(f"Something went wrong trying to get misp event {event_id}: {e}")
         return False
+    mh.event_hosts = get_event_objects(mh, event, 'misphunter-host')
+    mh.event_seeds = get_event_objects(mh, event, 'misphunter-seed')
+    mh.event_certs = get_event_objects(mh, event, 'misphunter-cert')
+    mh.event_dns = get_event_objects(mh, event, 'misphunter-dns')
+    mh.event_malware = get_event_objects(mh, event, 'misphunter-malware')
     return event
 
 def get_all_event_seeds(mh):
@@ -462,7 +475,12 @@ def get_all_event_seeds(mh):
     for seed in seeds:
         enabled = get_attr_val_by_rel(seed, 'enabled')
         if enabled=="0":
-            continue
+            ### TODO REMOVE ME - DEBUGGING
+            if mh.debugging:
+                if str(seed.event_id) != '3978':
+                    continue
+            else:
+                continue
         if seed.event_id not in all_event_seeds:
             all_event_seeds[str(seed.event_id)] = []
         if seed not in all_event_seeds[str(seed.event_id)]:
