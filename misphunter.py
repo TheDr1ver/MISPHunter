@@ -146,42 +146,86 @@ class MISPHunter():
 
         # Loop through events one at a time
         for event_id, seeds in all_event_seeds.items():
+            ### DEBUGGING - only deal with one specific event
+            # if mh.debugging:
+            #     if str(event_id) != "3978":
+            #         continue
+
             event = misphandler.get_event(self, event_id)
             self.logger.info(f"\n###############################################################################\n\n# "
                 f"PROCESSING EVENT ID {event_id}\n# "
                 f"{event.info}"
                 f"\n###############################################################################\n\n")
-            misphandler.get_event_hosts(self, event)
-            # Above sets global lists of MISPObjects like mh.event_hosts = [<misphunter-host>, <misphunter-host>]
-            misphandler.get_event_seeds(self, event)
-            # mh.event_seeds = [<misphunter-seed>]
-            misphandler.get_event_certs(self, event)
-            # mh.event_certs = [<misphunter-cert>]
 
+            mh.event_hosts = misphandler.get_event_objects(self, event, 'misphunter-host')
+            # Above sets global lists of MISPObjects like mh.event_hosts = [<misphunter-host>, <misphunter-host>]
+            mh.event_seeds = misphandler.get_event_objects(self, event, 'misphunter-seed')
+            # mh.event_seeds = [<misphunter-seed>]
+            mh.event_certs = misphandler.get_event_objects(self, event, 'misphunter-cert')
+            # mh.event_certs = [<misphunter-cert>]
             # TODO - still haven't built these objects yet
             #   Issues #15 and #16
-            misphandler.get_event_dns(self, event)
+            mh.event_dns = misphandler.get_event_objects(self, event, 'misphunter-dns')
             # mh.event_dns = [<misphunter-dns>]
-            misphandler.get_event_malware(self, event)
+            mh.event_malware = misphandler.get_event_objects(self, event, 'misphunter-malware')
             # mh.event_malware = [<misphunter-malware>]
-            
-            # First, process seeds
-            event = huntlogic.process_seeds(self, seeds, event)
-            # process_seeds -> for each seed:
-            #   process_hosts -> for each host IP found by the seed search:
-            #       cert_pivot -> get all certs living on host. For each cert, create a misphunter-cert object. 
-            #       for each misphunter-cert object:
-            #           IMPORTANT: IF CERT IS TRASH/BLACKLISTED, SKIP PROCESS_CERT_IPS
-            #           process_cert_ips -> For all the IPs found in each cert,
-            #               process_hosts with the original seed and the IPs found related to that cert.
 
-            # TODO - Issue #3
+            mh.obj_index_mapping = {
+                "misphunter-seed": "search-string",
+                "misphunter-host": "host-ip",
+                "misphunter-cert": "cert-sha256",
+                "misphunter-dns": "domain",
+                "misphunter-malware": "sha256"
+            }
+
+            mh.rel_type_mapping = {
+                "search-string": "text",
+                "host-ip": "ip-dst",
+                "cert-sha256": "x509-fingerprint-sha256",
+                "domain": "domain",
+                "sha256": "sha256"
+            }
+
+            mh.obj_pivot_mapping = {
+                "misphunter-seed": {
+                    "found-host" : "misphunter-host"
+                },
+                "misphunter-host": {
+                    "extracted-certificate": "misphunter-cert",
+                    "extracted-domain": "misphunter-domain"
+                },
+                "misphunter-cert": {
+                    "cert-ip": "misphunter-host"
+                }
+            }
+            
+            # Reset updated objects and found pivots for each event processed
+            mh.event_staged_objects = []
+            mh.event_processed_object_uuids = []
+
+            ### Set the first stage with seed objects
+            event = huntlogic.set_the_stage(self, seeds, event)
+
+            if mh.debugging:
+                helper.log_stage_details(mh)
+            
+            # continue processing event_staged_objects until they're exhausted.
+            # as each event is processed from the stage, add its UUID to 
+            #   event_processed_object_uuids and remove it from event_staged_objects
+            while len(mh.event_staged_objects) > 0:
+                mh.logger.debug(f"{len(mh.event_staged_objects)} objects "
+                    f"remaining on stage.")
+                for obj in mh.event_staged_objects:
+                    event = huntlogic.process_stage_object(self, obj, event)
+
+            # TODO - Issue #3 
+            # NOTE: This is probably mostly-addressed now by extract_pivots()
             # Second, process all enabled misphunter objects for this event that were not touched after process_seeds()
             #   Might want to handle this differently than I originally thought. 
             #   If a host no longer shows up in a seed search, how can we tell if it's still related?
             #   Should it then be disabled?
 
-            # Third, run relationships/relationship checks against all objects in the event.
+            # Run relationships/relationship checks against all objects in the event.
             event = huntlogic.process_relationships(self, event)
 
             # Tag/Untag event and individual attributes as "new" if newly added within update_threshold
@@ -269,9 +313,7 @@ if __name__ == "__main__":
     mh.do_it_live = args.offline
     mh.force_ioc_extract = args.force_ioc_extract
     mh.ignore_timers = args.ignore_timers
-    # I think this was removed entirely, so probably can be scrubbed.
-    # mh.update_misp = True
-
+    
     # EVERYDAY Vars
     mh.verbose_logging = args.verbose
     # Determines how old an object can be before using API calls to update 
