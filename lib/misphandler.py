@@ -282,6 +282,8 @@ def check_json_freshness(mh, host_obj, service):
                 if not last_json.data:
                     mh.logger.warning(f"Still no go. RETURNING FALSE!")
                     return False
+                else:
+                    mh.logger.info(f"The magic appears to have worked!")
                 bytes_obj = last_json.data.read()
                 last_json.data.seek(0)
                 json_str = bytes_obj.decode('utf-8').replace("'", '"')

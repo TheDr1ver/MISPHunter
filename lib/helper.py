@@ -29,7 +29,7 @@ def get_logger(verbose=False):
     _log.handlers = []
     log_loc = "./misp-hunter.log"
     # formatter = logging.Formatter("%(asctime)s - %(name)s - %(funcName)s ln %(lineno)d - %(levelname)s - %(message)s")
-    formatter = logging.Formatter("%(asctime)s - %(filename)s - %(funcName)s ln %(lineno)d - %(levelname)s - %(message)s")
+    formatter = logging.Formatter("%(asctime)s - %(filename)s [%(lineno)d] - %(funcName)s - %(levelname)s - %(message)s")
     
     file_handler = logging.handlers.RotatingFileHandler(filename=log_loc, mode='a', maxBytes=30000000, backupCount=10)
     file_handler.setFormatter(formatter)
@@ -64,7 +64,7 @@ def log_stage_details(mh):
 #########################################
 
 def add_iocs_to_object(mh, iocs, checksum, host_obj):
-    mh.logger.info(f"Processing IOCs to add them to host object: \n{iocs}")
+    mh.logger.info(f"Processing IOCs to add them to host object: \n{pformat(iocs)}")
     # Get existing IOCs from object
     existing_iocs = {'ips': [], 'emails': [], 'domains': [], 'certificates': [], 'urls': []}
     for attr in host_obj.Attribute:
@@ -347,7 +347,9 @@ def enrich_host_obj(mh, host_obj):
 
     for service, data in raw.items():
         service_processed = False
+        mh.logger.info(f"#### Processing raw data for {service}...")
         if 'misphunter_processed' not in data:
+            mh.logger.debug(f"Data returned appears to be new...")
             # Cleanup raw JSON response for processing
             raw_sorted_json_text = sort_raw_json(mh, data, service)
             # Usually skipping this because the sub_dates logic takes way too long
@@ -357,6 +359,7 @@ def enrich_host_obj(mh, host_obj):
             # Load the blob for upcoming procesing/comparisons
             new_res = json.loads(raw_sorted_json_text)
         else:
+            mh.logger.debug(f"Data returned was previously processed!")
             # Handling string pulled from existing object that's already been processed
             data.pop('misphunter_processed')
             # This means we can skip the sorting
@@ -527,85 +530,13 @@ def flatten_dict(mh, dictionary, remove_dates=False, remove_hashes=False):
                 yield temp1, value
         elif isinstance(parent_value, list):
             i = 0 
-            # NMD Handle Empty Lists
             if len(parent_value) <= 0:
                 mh.logger.debug(f"parent_value is list of length 0... which is an odd outlier")
                 mh.logger.debug(f"Doing nothing for parent_key: {parent_key}")
-                # yield parent_key, []
-
-            # NMD second attempt to fix this crap
+                # Do nothing
             elif isinstance(parent_value[0], dict):
-                '''
-                # NMD third attempt to fix this crap
-                # This try/except is redundant because eventually it'll do it a second time
-                #   after sorting anyway...
-                try:
-                    for value in parent_value:
-                        temp2 = parent_key + '_'+str(i) 
-                        i += 1
-                        yield temp2, value
-                except Exception as e :
-                    mh.logger.error(f"Fucked again. temp {temp2} value {str(value)[0:25]}")
-                    raise(e)
-                '''
                 mh.logger.debug(f"first item in parent_value list is a dict, so we can't sort it...")
-                mh.logger.debug(f"NOT sorting parent_value...")
-                '''
-
-                # TODO Something is severely wrong in... all of this.
-                # ...or maybe in how I was doing it originally? It seems to be... working?
-
-                mh.logger.debug(f"parent_value[0] {str(parent_value[0])[0:35]} is a dict.")
-                mh.logger.debug(f"There are {len(parent_value)} TOTAL parent_values.")
-                if len(parent_value)>1:
-                    mh.logger.debug(f"parent_value[1] is {str(parent_value[1])[0:35]}")
-                # list_of_keys = list(parent_value[0].keys())
-                # ^^ isn't good enough because sometimes each parent_value has diff keys
-                list_of_keys = []
-                all_pv_types = {}
-                for pv in parent_value:
-                    pv_type = str(type(pv))
-                    if pv_type not in all_pv_types:
-                        all_pv_types[pv_type] = 1
-                    else:
-                        all_pv_types[pv_type]+=1
-                    lk = list(pv.keys())
-                    for k in lk:
-                        if k not in list_of_keys:
-                            list_of_keys.append(k)
-                list_of_keys.sort()
-                mh.logger.debug(f"Breakdown of parent_value types: {all_pv_types}")
-
-                # sorting_key = list_of_keys[0]
-                # ^^ Isn't good enough because if the sorting_key isn't the same for all dicts
-                #   it will fail.
-                # loop through and check if sorting_keys are appropriate for parent_value dict.
-                sorting_key=False
-                for k in list_of_keys:
-                    if sorting_key:
-                        # we've got a key that appears in all dicts. Stop looking for more.
-                        mh.logger.debug(f"{k} appears in all parent_dicts! Sorting by that!")
-                        break
-                    for pv in parent_value:
-                        if k not in pv:
-                            # bad candidate for sorting_key
-                            sorting_key = False
-                            mh.logger.debug(f"key {k} didn't appear in parent_dict")
-                            break
-                        else:
-                            sorting_key = k
-                
-                try:
-                    # parent_value.sort(key=lambda i:i[sorting_key])
-                    parent_value.sort(key=lambda x:x[sorting_key])
-                except Exception as e:
-                    mh.logger.error(f"SURPRISE! IT'S THIS FUCKING ERROR AGAIN! :)")
-                    mh.logger.error(f"I was TRYING to process parent_value {parent_value} with sorting_key {sorting_key}...\n"
-                    f"...and whatever the fuck 'i' is supposed to be here {i}")
-                    raise(f"{e}")
-                for pv in parent_value:
-                    pv = str(pv)
-                '''
+                # Do nothing
             else:
                 try:
                     # mh.logger.debug(f"parent_value is not an empty list and parent_value[0] is not a dict.")
@@ -664,8 +595,7 @@ def force_ioc_extract(mh, checksum, host_obj, service, new_res):
         mh.logger.error(f"Unable to parse cert using service {service} - we weren't prepared for this!")
 
     if mh.debugging:
-        mh.logger.debug(f"#### All IOCs:")
-        mh.logger.debug(pformat(iocs))
+        mh.logger.debug(f"#### All IOCs:\n{pformat(iocs)}")
 
     updated_obj = add_iocs_to_object(mh, iocs, checksum, host_obj)
 
@@ -698,13 +628,30 @@ def get_latest_json(mh, host_obj, checksum, json_type):
                     f"is older than the blob we've already grabbed [{latest_json.value} - {latest_json.timestamp}]")
 
     if not latest_json:
-        mh.logger.debug(f"We have a new blob with checksum {checksum} for an existing host, "\
-            f"but we were unable to get a pre-existing JSON blob of the same type to compare "\
-            f"it to. This will happen when adding the first JSON blob from a new service.")
+        mh.logger.debug(f"We have a new blob with checksum {checksum} for \n\t"
+            f"an existing host, but we were unable to get a pre-existing \n\t"
+            f"JSON blob of the same type to compare it to. This will \n\t"
+            f"happen when adding the first JSON blob from a new service.")
         return False, False
 
     # If you've made it this far, you've got the latest JSON blob for comparison with your new blob
-    blob = latest_json.data.read()
+    try:
+        latest_json.data.seek(0)
+        blob = latest_json.data.read()
+        latest_json.data.seek(0)
+    except Exception as e:
+        mh.logger.error(f"Unable to read data from attribute "
+            f"{latest_json.value}. Trying some magic...")
+        latest_json = mh.misp.get_attribute(latest_json, pythonify=True)
+        try:
+            latest_json.data.seek(0)
+            blob = latest_json.data.read()
+            latest_json.data.seek(0)
+        except Exception as e:
+            mh.logger.error(f"Failed to read blob again: {e}\n\t"
+                f"Returning False.")
+            return False, False
+
     mh.logger.debug(f"blobg length: {len(blob)}")
     raw_json = blob.decode('utf-8')
     mh.logger.debug(f"raw_json length: {raw_json}")
@@ -760,9 +707,6 @@ def get_cert_obj(mh, cert_hash, parent_obj, event):
 
     return cert_data
     
-
-    
-
 def get_iocs(mh, data, cleanup):
     # Does the gruntwork of pulling IOCs out via Regex from large blobs
     misp = mh.misp
@@ -1154,7 +1098,7 @@ def search_cert_hosts(mh, cert_data, host_ip):
 
 def search_ip(mh, host_obj):
     raw = {}
-
+    mh.logger.info(f"Attempting to get raw JSON responses for searching host.")
     for service in mh.host_seed_services:
         if service == "censys-v2":
             mh.logger.debug(f"Running censys-v2 IP search")
@@ -1162,7 +1106,6 @@ def search_ip(mh, host_obj):
         if service == "shodan":
             mh.logger.debug(f"Running shodan IP search")
             raw[service] = shodan.shodan_search_ip(mh, host_obj)
-
     return raw
 
 def search_ip_old(mh, event, seed, host_obj):
