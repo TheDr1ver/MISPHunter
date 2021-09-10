@@ -11,27 +11,6 @@ from time import time, sleep
 
 from pymisp import MISPObject
 
-'''
-def get_logger():
-    
-    _log = logging.getLogger(__name__)
-    mh.logger.setLevel(logging.DEBUG)
-    mh.logger.handlers = []
-    log_loc = "./misp-hunter.log"
-    formatter = logging.Formatter("%(asctime)s - %(name)s - %(funcName)s ln %(lineno)d - %(levelname)s - %(message)s")
-    
-    file_handler = logging.handlers.RotatingFileHandler(filename=log_loc, mode='a', maxBytes=30000000, backupCount=10)
-    file_handler.setFormatter(formatter)
-    mh.logger.addHandler(file_handler)
-    
-    console_handler = logging.StreamHandler(sys.stderr)
-    console_handler.setFormatter(formatter)
-    mh.logger.addHandler(console_handler)
-    
-    return _log
-'''
-# _log = get_logger()
-
 ##################################
 #### 2-Stage Approach Functions
 ###################################
@@ -50,7 +29,6 @@ def create_obj_skeleton(mh, object_name="", value="", rel=""):
         update_timestamps(mh, attr)
 
     return obj
-
 
 ###################################
 
@@ -120,7 +98,6 @@ def blacklist_cert(mh, cert_data, comment):
         
     return cert_data
     
-
 def blacklist_check_cert(mh, cert):
     # mh.logger.debug(f"Checking misphunter-cert object {cert.uuid} to determine if it should be blacklisted.")
     cert_ips = cert.get_attributes_by_relation('cert-ip')
@@ -478,11 +455,12 @@ def get_all_event_seeds(mh):
         enabled = get_attr_val_by_rel(seed, 'enabled')
         if enabled=="0":
             ### TODO REMOVE ME - DEBUGGING
-            if mh.debugging:
-                if str(seed.event_id) != '3978':
-                    continue
-            else:
-                continue
+            # if mh.debugging:
+            #     if str(seed.event_id) != '3978':
+            #         continue
+            # else:
+            #     continue
+            continue
         if seed.event_id not in all_event_seeds:
             all_event_seeds[str(seed.event_id)] = []
         if seed not in all_event_seeds[str(seed.event_id)]:
@@ -537,27 +515,6 @@ def get_host_obj(mh, ip, event):
                 
     return host_obj
 
-def get_host_obj_old(mh, event, seed, ip):
-    # First, check if this IP shows up in any misphunter-host objects already living in this event.
-    for host_obj in mh.event_hosts:
-        host_ip = get_attr_val_by_rel(host_obj, 'host-ip')
-        if host_ip == ip:
-            mh.logger.info(f"Found existing object already living in this event with host-ip {ip}: {host_obj.uuid}. Updating timestamp and returning that.")
-            ip_attr = get_attr_obj_by_rel(host_obj, 'host-ip')
-            update_timestamps(mh, ip_attr)
-            return host_obj
-
-    # Then, check if this IP shows up in any recently-updated misphunter-host objects living on the server.
-    mh.logger.info(f"No existing object found in event {event.id} for IP {ip}. Searching the rest of the instance...")
-    existing_obj = search_recent_updated_objects(mh, event, seed, value=ip)
-    if not existing_obj:
-        mh.logger.info(f"No existing object found server-wide. Building new host_obj.")
-        host_obj = build_new_host_obj(mh, event, seed, ip)
-    else:
-        return existing_obj
-            
-    return host_obj
-
 def get_latest_attr_by_rel(obj, rel):
     latest_attr = False
     all_attrs = get_all_attrs_by_rel(obj, rel)
@@ -602,6 +559,57 @@ def get_local_blocks(mh, event):
                         local_blocks.append(host)
 
     return local_blocks
+
+def parse_cert_data(mh, cert, raw):
+    parsed_data = raw['parsed']
+    mh.logger.info(f"Parsing data for {cert.name} [{cert.uuid}] - "
+        f"{parsed_data['fingerprint_sha256']}!")
+
+    cert.add_attribute('cert-sha1', parsed_data['fingerprint_sha1'], 
+        type="x509-fingerprint-sha1", disable_correlation=True, to_ids=False, 
+        pythonify=True)
+    cert.add_attribute('cert-md5', parsed_data['fingerprint_md5'], 
+        type="x509-fingerprint-md5", disable_correlation=True, to_ids=False, 
+        pythonify=True)
+    cert.add_attribute('cert-issuer-dn', parsed_data['issuer_dn'], 
+        type="text", disable_correlation=True, to_ids=False, pythonify=True)
+    cert.add_attribute('cert-subject-dn', parsed_data['subject_dn'], 
+        type="text", disable_correlation=True, to_ids=False, pythonify=True)
+    cert.add_attribute('blacklisted', '0', type="boolean", 
+        disable_correlation=True, to_ids=False, pythonify=True)
+
+    # Flag it as new so we know to populate related IPs
+    cert.is_new = True
+
+    # Add the raw results as a JSON file
+    raw_data_text = json.dumps(raw)
+    json_filename = f"{parsed_data['fingerprint_sha256']}.json"
+    pseudofile = BytesIO(raw_data_text.encode('utf-8'))
+    cert.add_attribute('json', value=json_filename, data=pseudofile, 
+        type='attachment', disable_correlation=True, to_ids=False, 
+        pythonify=True)
+
+    # Add any names as domains
+    if 'names' in parsed_data:
+        for name in parsed_data['names']:
+            domain = name.lstrip("*.")
+            cert.add_attribute('cert-domain', domain, type="domain", 
+                disable_correlation=False, to_ids=False, pythonify=True)
+
+    # Process runtime stats
+    sha256 = parsed_data['fingerprint_sha256']
+    if 'certs_added' not in mh.run_stats:
+        mh.run_stats['certs_added'] = {str(cert.event_id): [sha256]}
+    elif str(cert.event_id) not in mh.run_stats['certs_added']:
+        mh.run_stats['certs_added'][str(cert.event_id)] = [sha256]
+    else:
+        mh.run_stats['certs_added'][str(cert.event_id)].append(sha256)
+    mh.run_stats['certs_added']['total']+=1
+
+    for attr in cert.Attribute:
+        update_timestamps(mh, attr)
+
+    return cert
 
 def search_recent_updated_objects(mh, event, object_name="", value="", rel="", timeframe=0):
     # This is called by the *_search_ip section of various plugins.
@@ -680,93 +688,6 @@ def search_recent_updated_objects(mh, event, object_name="", value="", rel="", t
             # currently processing. If we get here, it means that check was never run.
             mh.logger.debug(f"#### THIS SHOULD HAVE ALREADY BEEN CHECKED - "
                 "YOU SHOULD NOT GET HERE - INVESTIGATE! ####")
-            newest_obj.is_new=False
-
-    return newest_obj
-
-        
-
-def search_recent_updated_objects_old(mh, event, seed, value=""):
-    # This is called by the *_search_ip section of various plugins.
-    #   It returns False if no object was discovered that was updated 
-    #   in the last {mh.update_threshold} hours. Otherwise it
-    #   returns MISPObject, which skips all the enrichment processes it
-    #   would otherwise go through.
-    newest_obj = False
-    service = get_attr_val_by_rel(seed, 'service')
-    
-
-    min_epoch = int(time()) - (mh.update_threshold * 60 * 60)
-    # dt = datetime.fromtimestamp(max_epoch)
-
-    if service in mh.host_seed_services:
-        mh.logger.info(f"Searching MISP instance for misphunter-host objects with value {value} "\
-            f"that were updated in the last {mh.update_threshold} hours to save API queries.")
-        try:
-            misphunter_hosts = mh.misp.search(controller="objects", object_name="misphunter-host", 
-                value=value, timestamp=min_epoch, with_attachments=True, pythonify=True)
-            mh.logger.info(f"Found {len(misphunter_hosts)} results!")
-        except Exception as e:
-            mh.logger.error(f"Something went wrong trying to get misphunter-host objects server-wide: {e}")
-            return False
-        for host_obj in misphunter_hosts:
-            host_ip = get_attr_val_by_rel(host_obj, 'host-ip')
-            host_attr = get_attr_obj_by_rel(host_obj, 'host-ip')
-            if not host_attr:
-                mh.logger.error(f"Something went wrong. Apparently host object {host_obj.uuid} doesn't have a host-ip "
-                    f"associated with it. This should never happen. Dumping attributes and skipping for now.")
-                for a in host_obj.Attribute:
-                    mh.logger.error(f"\n{pformat(a.to_dict())}")
-                continue
-            host_obj_last_seen = int(host_attr.last_seen.timestamp())
-            if host_obj_last_seen < min_epoch:
-                mh.logger.info(f"Skipping {host_obj.uuid} because the IP was last seen too long ago.")
-                mh.logger.debug(f"Last_seen was {host_obj_last_seen} and we need it to be greater than {min_epoch} to "
-                    f"use it.")
-                continue
-            else:
-                mh.logger.info(f"Looks like we're good to go with {host_obj.uuid}")
-                mh.logger.debug(f"Last_seen was {host_obj_last_seen} and we need it to be less than {min_epoch} to "
-                    f"skip using it again")
-            if host_ip == value:
-                if not newest_obj:
-                    newest_obj = host_obj
-                    newest_attr = get_attr_obj_by_rel(newest_obj, 'host-ip')
-                    newest_obj_last_seen = int(newest_attr.last_seen.timestamp())
-                    continue
-                if host_obj_last_seen >= newest_obj_last_seen:
-                    newest_obj = host_obj
-                    newest_attr = get_attr_obj_by_rel(newest_obj, 'host-ip')
-                    newest_obj_last_seen = int(newest_attr.last_seen.timestamp())
-
-    # TODO - Future stuff - handle other types of seeds
-    '''
-    elif service in mh.dns_seed_services:
-        try:
-            misphunter_dnses = mh.misp.search(controller="objects", object_name="misphunter-dns", 
-                value=value, timestamp=min_epoch, with_attachments=True, pythonify=True)
-        except Exception as e:
-            mh.logger.error(f"Something went wrong trying to get misphunter-dns objects server-wide: {e}")
-            return False
-        for dns_obj in misphunter_dnses:
-            domain = get_attr_val_by_rel(dns_obj, 'domain')
-            if domain == value:
-                if not newest_obj:
-                    newest_obj = dns_obj
-                    continue
-                if int(dns_obj.timestamp.timestamp()) >= int(newest_obj.timestamp.timestamp()):
-                    newest_obj = host_obj
-    '''
-    if newest_obj:
-        # Check if this object belongs to the event we're processing, otherwise clone it.
-        if str(newest_obj.event_id) != str(event.id):
-            mh.logger.info(f"Most-recently updated object is from a different event - [{newest_obj.event_id} vs {event.id}]")
-            mh.logger.info(f"Cloning latest version of object {newest_obj.uuid} for adding to into event {event.id}")
-            newest_obj = clone_obj(mh, newest_obj, event)
-            host_attr = get_attr_obj_by_rel(newest_obj, 'host-ip')
-            epoch = int(time())
-            host_attr.first_seen = epoch-2
-        else:
             newest_obj.is_new=False
 
     return newest_obj

@@ -56,10 +56,265 @@ def log_stage_details(mh):
         stage_detail = f"{obj.name} - [{obj.uuid}] - {obj_index}"
         stage_details.append(stage_detail)
 
-    mh.logger.debug(f"Initial processing stage before being processed:\n\n"
-        f"{pformat(stage_details)}")
+    mh.logger.debug(f"Initial stage before being processed:\n\n"
+        f"{pformat(stage_details)}\n")
     mh.logger.debug(f"Already-processed uuids:\n\n"
-        f"{pformat(mh.event_processed_object_uuids)}")
+        f"{pformat(mh.event_processed_object_uuids)}\n")
+
+def enrich_cert_obj(mh, cert):
+    
+    if 'censys-v1' not in mh.host_seed_services:
+        mh.logger.error(f"censys-v1 is not enabled. Could not poll cert data!")
+        return cert
+    
+    mh.logger.info(f"Enriching {cert.name} [{cert.uuid}]")
+    index_attr = misphandler.get_attr_obj_by_rel(cert, 'cert-sha256')
+    index_val = misphandler.get_attr_val_by_rel(cert, 'cert-sha256')
+    cert_hash = index_val
+
+    mh.logger.debug(f"Checking for existing JSON attachment")
+    attrs = misphandler.get_all_attrs_by_rel(cert, 'json')
+    # If there's no JSON attachment, this is likely brand-new and needs to be
+    # retrieved from Censys!
+    if len(attrs) == 0:
+        mh.logger.info(f"Cert has no JSON blob associated with it. Must find"
+            f"certificate data for parsing!")
+        raw = censys.censys_v1_search_cert_data(mh, cert_hash)
+        if not raw:
+            mh.logger.info(f"Could not find certificate data! Blacklisting and "
+                f"returning cert!")
+            blacklisted = misphandler.get_attr_obj_by_rel(cert, 'blacklisted')
+            blacklisted.value = "1"
+            updated_cert = misphandler.update_existing_object(mh, cert)
+            if not updated_cert:
+                mh.logger.error(f"Failure updating cert {cert.uuid}...")
+                return cert
+            return updated_cert
+
+        # We got a good response from Censys!
+        cert = misphandler.parse_cert_data(mh, cert, raw)
+        # Update cert object
+        updated_cert = misphandler.update_existing_object(mh, cert)
+        if not updated_cert:
+            mh.logger.error(f"Could not update {cert.name} [{cert.uuid}]! "
+                f"Returning cert object as-is!")
+            return cert
+        cert = updated_cert
+        cert.is_new = True
+    
+    # Check if cert is blacklisted
+    blacklisted = misphandler.get_attr_val_by_rel(cert, 'blacklisted')
+    if int(blacklisted) == 1:
+        mh.logger.info(f"cert [{cert.uuid}] - {cert_hash} is blacklisted. "
+        f"Stopping enrichment and returning as-is!")
+        return cert
+
+    mh.logger.info(f"Cert already has JSON object. Checking if update "
+        f"threshold is met for updating IPs.")
+    update_cert = False
+    min_epoch = time() - (int(mh.update_threshold) * 60 * 60)
+    last_updated = int(index_attr.last_seen.timestamp())
+    if last_updated < min_epoch:
+        mh.logger.debug(f"cert obj is old enough to update!")
+        update_cert = True
+    if hasattr(cert, 'is_new'):
+        if cert.is_new:
+            mh.logger.debug(f"cert obj is brand new. Update it!")
+            update_cert = True
+    if hasattr(cert, 'is_clone'):
+        if cert.is_clone:
+            mh.logger.debug(f"cert obj is a first-time clone. Update it!")
+            update_cert = True
+
+    if not update_cert:
+        mh.logger.info(f"Update requirements were not met. Returning as-is.")
+        return cert
+
+    # Looks like the update requirements were met - time to find related hosts!
+    cert = search_cert_hosts(mh, cert)
+
+    # Update the cert one last time before returning
+    updated_cert = misphandler.update_existing_object(mh, cert)
+    if not updated_cert:
+        mh.logger.error(f"Could not update {cert.name} [{cert.uuid}]! "
+            f"Returning cert object as-is!")
+        return cert
+    cert = updated_cert
+    
+    return cert
+
+def enrich_host_obj(mh, host_obj):
+
+    host_ip = misphandler.get_attr_val_by_rel(host_obj, 'host-ip')
+    mh.logger.info(f"Enriching Host Object {host_obj.uuid} - {host_ip}")
+
+    # Search all active services for data on host_ip
+    # raw = {
+    #     'censys-v2': <parsed JSON object that can be treated as a dict>,
+    #     'shodan': <parsed JSON object that can be treated as a dict>
+    # }
+    raw = search_ip(mh, host_obj)
+
+    for service, data in raw.items():
+        service_processed = False
+        mh.logger.info(f"#### Processing raw data for {service}...")
+        if 'misphunter_processed' not in data:
+            mh.logger.debug(f"Data returned appears to be new...")
+            # Cleanup raw JSON response for processing
+            raw_sorted_json_text = sort_raw_json(mh, data, service)
+            # Usually skipping this because the sub_dates logic takes way too long
+            if mh.remove_dates:
+                raw_sorted_json_text = remove_dates(raw_sorted_json_text)
+            checksum = md5_data(mh, raw_sorted_json_text)
+            # Load the blob for upcoming procesing/comparisons
+            new_res = json.loads(raw_sorted_json_text)
+        else:
+            mh.logger.debug(f"Data returned was previously processed!")
+            # Handling string pulled from existing object that's already been processed
+            data.pop('misphunter_processed')
+            # This means we can skip the sorting
+            raw_sorted_json_text = json.dumps(data)
+            # Usually skipping this because the sub_dates logic takes way too long
+            if mh.remove_dates:
+                raw_sorted_json_text = remove_dates(raw_sorted_json_text)
+            checksum = md5_data(mh, raw_sorted_json_text)
+            new_res = json.loads(raw_sorted_json_text)
+
+        # Get the best JSON blob to compare it to. e.g. censys-json cannot be compared to shodan-json
+        json_type = f"{service}-json"
+        json_attrs = misphandler.get_all_attrs_by_rel(host_obj, json_type)
+        for attr in json_attrs:
+            # Check checksum against the json filename (which contains the checksum)
+            if attr.value.startswith(checksum):
+                mh.logger.info(f"Checksum {checksum} already saved to host_obj. Updating timestamp of JSON object.")
+                # Update the timestamps to indicate we've seen this again
+                misphandler.update_timestamps(mh, attr)
+                if not mh.force_ioc_extract:
+                    mh.logger.debug(f"force_ioc_extract set to False. Returning object without processing new IOCs.")
+                else:
+                    mh.logger.info(f"force_ioc_extract set to True. Extracting IOCs from JSON blob {checksum}!")
+                    mh.logger.debug(f"...even though we've probably already done this before...")
+                    host_obj = force_ioc_extract(mh, checksum, host_obj, service, new_res)
+                # return host_obj
+                service_processed = True
+        
+        # blob already exists and there's nothing to compare. Check the next service.
+        if service_processed:
+            continue
+        
+        # If you've made it this far, this host_obj already exists, but this json blob is new
+        # Get the latest json blob to compare the new one to. Returns False if nothing for comparison.
+        last_json_name, json_dict = get_latest_json(mh, host_obj, checksum, json_type)
+
+        if json_dict == False:
+            mh.logger.info(f"Could not find JSON blob to do comparison. "\
+                f"Probably adding the first JSON blob of type {json_type} to host_obj {host_obj.uuid} - {host_ip}.")
+            comment = f"First JSON blob of type {json_type} seen for this host."
+            # Add the new blob...
+            host_obj = misphandler.add_json_attr(mh, checksum, raw_sorted_json_text, host_obj, json_type, comment=comment)
+            # ...extract the IOCs
+            host_obj = force_ioc_extract(mh, checksum, host_obj, service, new_res)
+            # ...and process the next service
+            # return host_obj
+            continue
+
+        # If you're still running, we found two json blobs to compare
+        mh.logger.info(f"Comparing {checksum}.json and {last_json_name}...")
+        compare_notes = dict_compare(json_dict, new_res)
+
+        # Add new JSON blob to existing host object with dict comparison as the comment
+        comment = f"Compared to {last_json_name}\n"
+        comment += compare_notes
+        host_obj = misphandler.add_json_attr(mh, checksum, raw_sorted_json_text, host_obj, json_type, comment=comment)
+
+        # Extract IOCs
+        host_obj = force_ioc_extract(mh, checksum, host_obj, service, new_res)
+
+        # return host_obj
+        # process next service
+        continue
+
+    # Update the host obj one last time before returning
+    updated_host = misphandler.update_existing_object(mh, host_obj)
+    if not updated_host:
+        mh.logger.error(f"Could not update {host_obj.name} [{host_obj.uuid}]! "
+            f"Returning cert object as-is!")
+        return host_obj
+    host_obj = updated_host
+
+    mh.logger.info(f"Finished Enrichment! Processed {len(raw)} services for host {host_ip} [{host_obj.uuid}]!")
+    return host_obj
+
+def search_cert_hosts(mh, cert_data):
+    # Searches services for hosts associated with a given certificate
+    # Updates the misphunter-cert object with any new IPs that were found
+    # Returns the misphunter-cert object as well as a plain list of IPs found by searching the certificate
+    
+    all_ips = []
+    ips = {}
+    blacklisted = False
+
+    cert_hash = misphandler.get_attr_val_by_rel(cert_data, 'cert-sha256')
+    mh.logger.info(f"Searching for additional IPs associated with cert {cert_hash}")
+
+    if mh.censys_v2_active:
+        mh.logger.debug(f"checking censys for IPs associated with {cert_hash}...")
+        censys_v2_ips = censys.censys_v2_search_cert_hosts(mh, cert_hash)
+
+        if len(censys_v2_ips) > mh.cert_pivot_threshold:
+            comment = f"Censys returned {len(censys_v2_ips)} related hosts, "\
+            f"which is higher than the threshold set of "\
+            f"{mh.cert_pivot_threshold}.\nTruncating results and "\
+            f"blacklisting this cert."
+            cert_data = misphandler.blacklist_cert(mh, cert_data, comment)
+            blacklisted = True
+
+        censys_v2_ips = censys_v2_ips[0:mh.cert_pivot_threshold]
+
+        mh.logger.info(f"Censys IPs found: {censys_v2_ips}")
+        
+        ips['censys-v2'] = censys_v2_ips
+        for ip in censys_v2_ips:
+            if ip not in all_ips:
+                all_ips.append(ip)
+    else:
+        mh.logger.info(f"censys-v2 not listed as active. Skipping!")
+
+    if mh.shodan_active and not blacklisted:
+        mh.logger.debug(f"checking shodan for IPs associated with {cert_hash}...")
+        shodan_ips = shodan.shodan_search_cert_hosts(mh, cert_hash)
+
+        if len(shodan_ips) > mh.cert_pivot_threshold:
+            comment = f"Shodan returned {len(shodan_ips)} related hosts, "\
+                f"which is higher than the threshold set of "\
+                f"{mh.cert_pivot_threshold}.\nTruncating results and "\
+                f"blacklisting this cert."
+            cert_data = misphandler.blacklist_cert(mh, cert_data, comment)
+            blacklisted = True
+
+        shodan_ips = shodan_ips[0:mh.cert_pivot_threshold]
+
+        mh.logger.info(f"Shodan IPs found: {shodan_ips}")
+
+        ips['shodan'] = shodan_ips
+        for ip in shodan_ips:
+            if ip not in all_ips:
+                all_ips.append(ip)
+    else:
+        mh.logger.info(f"shodan not listed as active. Skipping!")
+
+    # Check total IPs length
+    if len(all_ips) > mh.cert_pivot_threshold:
+        comment = f"Total number of IPs ({len(all_ips)}) is greater "\
+            f"than the threshold set of {mh.cert_pivot_threshold}. "\
+            f"\nBlacklisting this cert."
+        mh.logger.info(comment)
+        cert_data = misphandler.blacklist_cert(mh, cert_data, comment)
+
+    # add IPs to cert_data object
+    cert_data = misphandler.add_ips_to_cert_obj(mh, cert_data, ips)
+
+    return cert_data
 
 #########################################
 
@@ -333,179 +588,6 @@ def dict_compare(dict1, dict2):
 
     return comment
 
-def enrich_host_obj(mh, host_obj):
-
-    host_ip = misphandler.get_attr_val_by_rel(host_obj, 'host-ip')
-    mh.logger.info(f"Enriching Host Object {host_obj.uuid} - {host_ip}")
-
-    # Search all active services for data on host_ip
-    # raw = {
-    #     'censys-v2': <parsed JSON object that can be treated as a dict>,
-    #     'shodan': <parsed JSON object that can be treated as a dict>
-    # }
-    raw = search_ip(mh, host_obj)
-
-    for service, data in raw.items():
-        service_processed = False
-        mh.logger.info(f"#### Processing raw data for {service}...")
-        if 'misphunter_processed' not in data:
-            mh.logger.debug(f"Data returned appears to be new...")
-            # Cleanup raw JSON response for processing
-            raw_sorted_json_text = sort_raw_json(mh, data, service)
-            # Usually skipping this because the sub_dates logic takes way too long
-            if mh.remove_dates:
-                raw_sorted_json_text = remove_dates(raw_sorted_json_text)
-            checksum = md5_data(mh, raw_sorted_json_text)
-            # Load the blob for upcoming procesing/comparisons
-            new_res = json.loads(raw_sorted_json_text)
-        else:
-            mh.logger.debug(f"Data returned was previously processed!")
-            # Handling string pulled from existing object that's already been processed
-            data.pop('misphunter_processed')
-            # This means we can skip the sorting
-            raw_sorted_json_text = json.dumps(data)
-            # Usually skipping this because the sub_dates logic takes way too long
-            if mh.remove_dates:
-                raw_sorted_json_text = remove_dates(raw_sorted_json_text)
-            checksum = md5_data(mh, raw_sorted_json_text)
-            new_res = json.loads(raw_sorted_json_text)
-
-        # Get the best JSON blob to compare it to. e.g. censys-json cannot be compared to shodan-json
-        json_type = f"{service}-json"
-        json_attrs = misphandler.get_all_attrs_by_rel(host_obj, json_type)
-        for attr in json_attrs:
-            # Check checksum against the json filename (which contains the checksum)
-            if attr.value.startswith(checksum):
-                mh.logger.info(f"Checksum {checksum} already saved to host_obj. Updating timestamp of JSON object.")
-                # Update the timestamps to indicate we've seen this again
-                misphandler.update_timestamps(mh, attr)
-                if not mh.force_ioc_extract:
-                    mh.logger.debug(f"force_ioc_extract set to False. Returning object without processing new IOCs.")
-                else:
-                    mh.logger.info(f"force_ioc_extract set to True. Extracting IOCs from JSON blob {checksum}!")
-                    mh.logger.debug(f"...even though we've probably already done this before...")
-                    host_obj = force_ioc_extract(mh, checksum, host_obj, service, new_res)
-                # return host_obj
-                service_processed = True
-        
-        # blob already exists and there's nothing to compare. Check the next service.
-        if service_processed:
-            continue
-        
-        # If you've made it this far, this host_obj already exists, but this json blob is new
-        # Get the latest json blob to compare the new one to. Returns False if nothing for comparison.
-        last_json_name, json_dict = get_latest_json(mh, host_obj, checksum, json_type)
-
-        if json_dict == False:
-            mh.logger.info(f"Could not find JSON blob to do comparison. "\
-                f"Probably adding the first JSON blob of type {json_type} to host_obj {host_obj.uuid} - {host_ip}.")
-            comment = f"First JSON blob of type {json_type} seen for this host."
-            # Add the new blob...
-            host_obj = misphandler.add_json_attr(mh, checksum, raw_sorted_json_text, host_obj, json_type, comment=comment)
-            # ...extract the IOCs
-            host_obj = force_ioc_extract(mh, checksum, host_obj, service, new_res)
-            # ...and process the next service
-            # return host_obj
-            continue
-
-        # If you're still running, we found two json blobs to compare
-        mh.logger.info(f"Comparing {checksum}.json and {last_json_name}...")
-        compare_notes = dict_compare(json_dict, new_res)
-
-        # Add new JSON blob to existing host object with dict comparison as the comment
-        comment = f"Compared to {last_json_name}\n"
-        comment += compare_notes
-        host_obj = misphandler.add_json_attr(mh, checksum, raw_sorted_json_text, host_obj, json_type, comment=comment)
-
-        # Extract IOCs
-        host_obj = force_ioc_extract(mh, checksum, host_obj, service, new_res)
-
-        # return host_obj
-        # process next service
-        continue
-
-    mh.logger.info(f"Finished Enrichment! Processed {len(raw)} services for host {host_ip} [{host_obj.uuid}]!")
-    return host_obj
-
-
-def enrich_host_obj_old(mh, event, seed, host_obj):
-
-    host_ip = misphandler.get_attr_val_by_rel(host_obj, 'host-ip')
-    service = misphandler.get_attr_val_by_rel(seed, 'service')
-    mh.logger.info(f"Enriching Host Object {host_obj.uuid} - {host_ip} - using seed service {service}")
-
-    # raw = parsed JSON object that can be treated as a dict
-    raw = search_ip(mh, event, seed, host_obj)
-
-    # if 'misphunter_processed' key IS set, it means we've already handled this JSON
-    #   blob before. No need to re-process it. Remove the key so the checksum stays the same
-    #   and pass on as-is.
-    # if 'misphunter_processed' key is NOT set, do all the pre-processing stuff
-    
-    if 'misphunter_processed' not in raw:
-        # Cleanup raw JSON response for processing
-        raw_sorted_json_text = sort_raw_json(mh, raw, service)
-        
-        # Usually skipping this because the sub_dates logic takes way too long
-        if mh.remove_dates:
-            raw_sorted_json_text = remove_dates(raw_sorted_json_text)
-
-        checksum = md5_data(mh, raw_sorted_json_text)
-
-        # Load the blob for upcoming procesing/comparisons
-        new_res = json.loads(raw_sorted_json_text)
-    else:
-        # Handling string pulled from existing object that's already been processed
-        raw.pop('misphunter_processed')
-        raw_sorted_json_text = json.dumps(raw)
-        checksum = md5_data(mh, raw_sorted_json_text)
-        new_res = json.loads(raw_sorted_json_text)
-    
-    # Get the best JSON blob to compare it to. e.g. censys-json cannot be compared to shodan-json
-    json_type = f"{service}-json"
-    json_attrs = misphandler.get_all_attrs_by_rel(host_obj, json_type)
-    for attr in json_attrs:
-        # Check checksum against the json filename (which contains the checksum)
-        if attr.value.startswith(checksum):
-            mh.logger.info(f"Checksum {checksum} already saved to host_obj. Updating timestamp of JSON object.")
-            # Update the timestamps to indicate we've seen this again
-            misphandler.update_timestamps(mh, attr)
-            if not mh.force_ioc_extract:
-                mh.logger.debug(f"force_ioc_extract set to False. Returning object without processing new IOCs.")
-            else:
-                mh.logger.info(f"force_ioc_extract set to True. Extracting IOCs from JSON blob {checksum}!")
-                host_obj = force_ioc_extract(mh, checksum, host_obj, service, new_res)
-            return host_obj
-    
-    # If you've made it this far, this host_obj already exists, but this json blob is new
-    # Get the latest json blob to compare the new one to. Returns False if nothing for comparison.
-    last_json_name, json_dict = get_latest_json(mh, host_obj, checksum, json_type)
-
-    if json_dict == False:
-        mh.logger.info(f"Could not find JSON blob to do comparison. "\
-            f"Probably adding the first JSON blob of type {json_type} to host_obj {host_obj.uuid} - {host_ip}.")
-        comment = f"First JSON blob of type {json_type} seen for this host."
-        # Add the new blob...
-        host_obj = misphandler.add_json_attr(mh, checksum, raw_sorted_json_text, host_obj, json_type, comment=comment)
-        # ...extract the IOCs
-        host_obj = force_ioc_extract(mh, checksum, host_obj, service, new_res)
-        # ...and return the host object
-        return host_obj
-
-    # If you're still running, we found two json blobs to compare
-    mh.logger.info(f"Comparing {checksum}.json and {last_json_name}...")
-    compare_notes = dict_compare(json_dict, new_res)
-
-    # Add new JSON blob to existing host object with dict comparison as the comment
-    comment = f"Compared to {last_json_name}\n"
-    comment += compare_notes
-    host_obj = misphandler.add_json_attr(mh, checksum, raw_sorted_json_text, host_obj, json_type, comment=comment)
-
-    # Extract IOCs
-    host_obj = force_ioc_extract(mh, checksum, host_obj, service, new_res)
-
-    return host_obj
-
 def flatten_data(mh, raw):
     mh.logger.debug(f"Flattening JSON dictionary & removing hashes")
     try:
@@ -651,8 +733,8 @@ def get_latest_json(mh, host_obj, checksum, json_type):
             mh.logger.error(f"Failed to read blob again: {e}\n\t"
                 f"Returning False.")
             return False, False
-
-    mh.logger.debug(f"blobg length: {len(blob)}")
+    mh.logger.debug(f"Magic appears to have worked!")
+    mh.logger.debug(f"blob length: {len(blob)}")
     raw_json = blob.decode('utf-8')
     mh.logger.debug(f"raw_json length: {raw_json}")
     # mh.logger.debug(f"raw_json first 10 chars: {raw_json[0:10]}")
@@ -1020,81 +1102,6 @@ def search_cert_data(mh, cert_hash, host_obj, event):
         else:
             mh.logger.warning(f"Something went wrong. Got no search results for cert {cert_hash}.")
             return False
-    
-def search_cert_hosts(mh, cert_data, host_ip):
-    # Searches services for hosts associated with a given certificate
-    # Updates the misphunter-cert object with any new IPs that were found
-    # Returns the misphunter-cert object as well as a plain list of IPs found by searching the certificate
-    
-    all_ips = []
-    ips = {}
-
-    cert_hash = misphandler.get_attr_val_by_rel(cert_data, 'cert-sha256')
-    mh.logger.info(f"Searching for additional IPs associated with cert {cert_hash}")
-
-    if mh.censys_v2_active:
-        mh.logger.debug(f"checking censys for IPs associated with {cert_hash}...")
-        censys_v2_ips = censys.censys_v2_search_cert_hosts(mh, cert_hash)
-
-        # Avoid getting caught in a loop by keeping this host we're currently processing
-        # out of the mix
-        if host_ip in censys_v2_ips:
-            censys_v2_ips.remove(host_ip)
-
-        if len(censys_v2_ips) > mh.cert_pivot_threshold:
-            comment = f"Censys returned {len(censys_v2_ips)} related hosts, which is higher than the threshold set of "\
-                f"{mh.cert_pivot_threshold}. Truncating results and blacklisting this cert."
-            cert_data = misphandler.blacklist_cert(mh, cert_data, comment)
-            blacklisted = True
-
-        censys_v2_ips = censys_v2_ips[0:mh.cert_pivot_threshold]
-
-        mh.logger.info(f"Censys IPs found: {censys_v2_ips}")
-        
-        ips['censys-v2'] = censys_v2_ips
-        for ip in censys_v2_ips:
-            if ip not in all_ips:
-                all_ips.append(ip)
-    else:
-        mh.logger.info(f"censys-v2 not listed as active. Skipping!")
-
-    if mh.shodan_active and not blacklisted:
-        mh.logger.debug(f"checking shodan for IPs associated with {cert_hash}...")
-        shodan_ips = shodan.shodan_search_cert_hosts(mh, cert_hash)
-
-        # Avoid getting caught in a loop by keeping this host we're currently processing
-        # out of the mix
-        if host_ip in shodan_ips:
-            shodan_ips.remove(host_ip)
-
-        if len(shodan_ips) > mh.cert_pivot_threshold:
-            comment = f"Shodan returned {len(shodan_ips)} related hosts, which is higher than the threshold set of "\
-                f"{mh.cert_pivot_threshold}. Truncating results and blacklisting this cert."
-            cert_data = misphandler.blacklist_cert(mh, cert_data, comment)
-            blacklisted = True
-
-        shodan_ips = shodan_ips[0:mh.cert_pivot_threshold]
-
-        mh.logger.info(f"Shodan IPs found: {shodan_ips}")
-
-        ips['shodan'] = shodan_ips
-        for ip in shodan_ips:
-            if ip not in all_ips:
-                all_ips.append(ip)
-    else:
-        mh.logger.info(f"shodan not listed as active. Skipping!")
-
-    # Check total IPs length
-    if len(all_ips) > mh.cert_pivot_threshold:
-        comment = f"Total number of IPs ({len(all_ips)}) is greater than the threshold set of "\
-            f"{mh.cert_pivot_threshold}. Blacklisting this cert."
-        mh.logger.info(comment)
-        cert_data = misphandler.blacklist_cert(mh, cert_data, comment)
-
-    # add IPs to cert_data object
-    cert_data = misphandler.add_ips_to_cert_obj(mh, cert_data, ips)
-
-    return cert_data
 
 def search_ip(mh, host_obj):
     raw = {}
@@ -1106,26 +1113,6 @@ def search_ip(mh, host_obj):
         if service == "shodan":
             mh.logger.debug(f"Running shodan IP search")
             raw[service] = shodan.shodan_search_ip(mh, host_obj)
-    return raw
-
-def search_ip_old(mh, event, seed, host_obj):
-
-    service = misphandler.get_attr_val_by_rel(seed, 'service')
-
-    if service == "censys-v1":
-        mh.logger.debug(f"Running censys-v1 search")
-        # raw = censys.censys_v1_search_ip(mh, event, seed, host_ip)
-        raw = []
-    elif service == 'censys-v2':
-        mh.logger.debug(f"Running censys-v2 search")
-        raw = censys.censys_v2_search_ip(mh, event, seed, host_obj)
-    elif service == 'shodan':
-        mh.logger.debug(f"Running shodan search")
-        # raw = shodan.shodan_search_ip(mh, host_ip, service)
-        raw = shodan.shodan_search_ip(mh, event, seed, host_obj)
-    else:
-        mh.logger.debug(f"Hunt type {service} not found - are you sure that's a valid module?")
-    
     return raw
 
 def set_type(v, vtype):    

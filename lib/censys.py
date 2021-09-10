@@ -6,28 +6,7 @@ from time import time
 
 from . import helper, misphandler
 
-'''
-def get_logger():
-    
-    _log = logging.getLogger(__name__)
-    mh.logger.setLevel(logging.DEBUG)
-    mh.logger.handlers = []
-    log_loc = "./misp-hunter.log"
-    formatter = logging.Formatter("%(asctime)s - %(name)s - %(funcName)s ln %(lineno)d - %(levelname)s - %(message)s")
-    
-    file_handler = logging.handlers.RotatingFileHandler(filename=log_loc, mode='a', maxBytes=30000000, backupCount=10)
-    file_handler.setFormatter(formatter)
-    mh.logger.addHandler(file_handler)
-    
-    console_handler = logging.StreamHandler(sys.stderr)
-    console_handler.setFormatter(formatter)
-    mh.logger.addHandler(console_handler)
-    
-    return _log
-'''
-# _log = get_logger()
-
-def censys_v1_search_cert_data(mh, cert, event):
+def censys_v1_search_cert_data(mh, cert):
     # Return MISPObject of cert_data if already found, otherwise return raw censys response
     # cert_data = False
     mh.logger.info(f"Getting raw JSON data for {cert}")
@@ -55,6 +34,10 @@ def censys_v1_search_cert_data(mh, cert, event):
             raw = json.loads(res.text)
             if mh.debugging:
                 mh.logger.debug(f"Results for {cert}: \n\n{raw}")
+            if 'error' in raw:
+                mh.logger.error(f"Error getting cert {cert}. Status: "
+                    f"{res.status_code} - {raw}")
+                return False
         else:
             mh.logger.error(f"Error getting cert {cert}. Status: {res.status_code} - {res}")
             return False
@@ -313,49 +296,4 @@ def censys_v2_search_ip(mh, host_obj):
         mh.logger.error(f"Error getting IP {ip}: {e}")
         return False
     
-    return raw['result']
-
-def censys_v2_search_ip_old(mh, event, seed, host_obj):
-    
-    ip = misphandler.get_attr_val_by_rel(host_obj, 'host-ip')
-    service = misphandler.get_attr_val_by_rel(seed, 'service')
-    mh.logger.debug(f"Getting raw JSON data from Censys for host {ip}")
-    raw = {}
-    url = f"https://search.censys.io/api/v2/hosts/{ip}"
-    auth = (mh.censys_v2_id, mh.censys_v2_secret)
-    
-    if mh.do_it_live:
-
-        fresh_json = misphandler.check_json_freshness(mh, host_obj, service)
-        if fresh_json:
-            return fresh_json
-        else:
-            mh.logger.debug(f"Discovered no fresh JSON blobs that are appropriate for reuse.")
-        
-        mh.logger.debug(f"Using LIVE API query to reach out to Censys and get IP data...")
-        try: 
-            rate_limit = mh.censys_v2_rate
-            # Sleep {rate_limit} seconds for each time the search is run
-            helper.rate_respect(mh, mh.search_time, rate_limit)
-            mh.search_time = time()
-            res = requests.get(url, auth=auth)
-            mh.censys_v2_api_counter+=1
-
-            mh.logger.debug(f"\n\n#### TOTAL CENSYS API CALLS NOW {mh.censys_v2_api_counter}! \n\n")
-            if res.status_code == 200:
-                raw = json.loads(res.text)
-                if mh.debugging:
-                    mh.logger.debug(f"Results for {ip}: \n\n{raw}")
-            else:
-                # raise Exception(f"Error getting IP {ip}. Status: {res.status_code} - {res}")
-                mh.logger.error(f"Error getting IP {ip}. Status: {res.status_code} - {res}")
-                return False
-        except Exception as e:
-            mh.logger.error(f"Error getting IP {ip}: {e}")
-            return False
-    
-    #### FOR DEBUGGING
-    else:
-        mh.logger.debug(f"do_it_live==False - using dummy data")
-        raw = {'code':200,'status':'OK','result':{'ip':f"{ip}", 'debugging': f"NO DUMMY DATA RETURNED FOR {ip}"}}
     return raw['result']
