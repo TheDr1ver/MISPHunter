@@ -114,7 +114,7 @@ def shodan_search(mh, search):
             mh.logger.debug(f"\n\n#### TOTAL SHODAN API CALLS NOW {mh.shodan_api_counter}! \n\n")
             mh.logger.debug(f"SHODAN got a 200 OK for {search}!")
 
-        except shodan_api.APIError:
+        except shodan.APIError:
             mh.logger.error(f"Error - API timed out. Trying again...")
             try:
                 helper.rate_respect(mh, mh.search_time, rate_limit+1)
@@ -183,7 +183,7 @@ def shodan_search_ip(mh, host_obj):
         if mh.debugging:
             mh.logger.debug(f"Results for {ip}: \n\n{raw}")
         
-    except shodan_api.APIError:
+    except shodan.APIError:
         mh.logger.error(f"Error - API timed out. Trying again...")
         try:
             helper.rate_respect(mh, mh.search_time, rate_limit+1)
@@ -230,7 +230,7 @@ def shodan_search_cert_hosts(mh, cert):
             mh.logger.debug(f"\n\n#### TOTAL SHODAN API CALLS NOW {mh.shodan_api_counter}! \n\n")
             mh.logger.debug(f"SHODAN got a 200 OK for {cert}!")
 
-        except shodan_api.APIError:
+        except shodan.APIError:
             mh.logger.error(f"Error - API timed out. Trying again...")
             try:
                 helper.rate_respect(mh, mh.search_time, rate_limit+1)
