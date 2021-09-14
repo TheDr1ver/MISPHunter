@@ -74,22 +74,52 @@ value, they'll be searched again.
 The general logic that the MISPHunter executes is as follows:
 
 ```
-# for each event with an enabled active misphunter-seed...
-# process_seeds -> for each seed in that event:
-#   find the hosts related to that seed search - each host becomes a misphunter-host object
-#   process_hosts -> for each host IP found by the seed search:
-#       extract domains, IPs, emails, URLs, and certificates from the raw JSON responses sent by the service
-#           add those details as attributes to the misphunter-host object
-#       compare the full json dictionary returned by the service with the last time it was retrieved. Save the raw JSON as an attachment within
-#           the misphunter-host object. Mark any keys that were added/removed/modified inside the attachment's comments.
-#       cert_pivot -> get all certs pulled from the misphunter-host object. For each cert, create a misphunter-cert object. 
-#       for each newly-created misphunter-cert object:
-#           process_cert_ips -> For all the IPs found in each cert:
-#               ASSUMING THE NUMBER OF IPS IS BELOW THE --cert-pivot-threshold (default 10):
-#                   process_hosts with the newly-found IPs related to that cert.
-# graph appropriate relationships between newly created misphunter objects
-# tag/untag important things that are newer/older than --new-discovery-threshold (default 72 hrs) for easy visibility
-# automatically disable things that shouldn't be pivoted on again (like certs returning only 1 host)
+for each event with an enabled active misphunter-seed...
+process_seeds -> for each seed in that event:
+  find the hosts related to that seed search 
+
+  Each host becomes a skeleton of a misphunter-host object with the bare
+  minimum of an IP and a blacklist boolean. This skeleton object is created by 
+  trying the following things in order:
+    1. Check if a misphunter-host object with this IP exists in this event.
+    2. Check if a misphunter-host object with this IP exists anywhere in the 
+      MISP instance. If so, clone it and save it here.
+    3. If no existing object can be found, make API calls to all active 
+      misphunter-host services and build a new object.
+  This skeleton object is then sent to the "stage" for further processing.
+
+  We then begin processing all objects in the stage.
+  While processing an object, new objects may be added to the stage.
+  Each object on the stage is processed until there are no more objects left.
+
+  misphunter-host objects are processed by the process_host function.
+    extract domains, IPs, emails, URLs, and certificates from the raw JSON 
+      responses sent by the service add those details as attributes to the 
+      misphunter-host object
+    compare the full json dictionary returned by the service with the last 
+      time it was retrieved. Save the raw JSON as an attachment within the 
+      misphunter-host object. Mark any keys that were added/removed/modified 
+      inside the attachment's comments.
+    If any attributes are extracted that are deemed "pivotable" (e.g. a
+      certificate hash), create skeleton objects for them and push to the stage.
+
+  misphunter-cert objects are processed by the process_cert function.
+    NOTE: these pivots currently require censys-v1 to be active.
+    extract important information and potential IOCs from the certificate.
+    search for other IPs using the same certificate.
+    If < 2 or > misphunter.cert_pivot_threshold hosts are found associated with
+      this certificate, automatically blacklist it to save future API queries.
+    If additional IPs are found that have not already been processed for this
+      event, get or create their corresponding misphunter-host objects and 
+      push those to the stage.
+
+graph appropriate relationships between newly created misphunter objects
+
+tag/untag important things that are newer/older than --new-discovery-threshold 
+  (default 72 hrs) for easy visibility
+
+automatically disable things that shouldn't be pivoted on again (like certs
+  returning only 1 host) that aren't already blacklisted.
 ```
 
 If you want to force a particular search to be processed again, just delete the `last-run` attribute from its corresponding 
