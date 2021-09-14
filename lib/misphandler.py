@@ -11,24 +11,6 @@ from time import time, sleep
 
 from pymisp import MISPObject
 
-##################################
-#### 2-Stage Approach Functions
-###################################
-
-def create_obj_skeleton(mh, object_name="", value="", rel=""):
-    
-    mh.logger.info(f"Building {object_name} skeleton...")
-    template = mh.misp.get_raw_object_template(object_name)
-    obj = MISPObject(object_name, misp_objects_template_custom=template)
-    obj.is_new = True
-    obj.add_attribute(rel, value, type=mh.rel_type_mapping[rel], disable_correlation=False, to_ids=False, pythonify=True)
-    obj.add_attribute('blacklisted', '0', type="boolean", disable_correlation=True, to_ids=False, pythonify=True)
-
-    # Update timestamps
-    for attr in obj.Attribute:
-        update_timestamps(mh, attr)
-
-    return obj
 
 ###################################
 
@@ -401,6 +383,21 @@ def clone_obj(mh, source_obj, event):
 
     return clone
 
+def create_obj_skeleton(mh, object_name="", value="", rel=""):
+    
+    mh.logger.info(f"Building {object_name} skeleton...")
+    template = mh.misp.get_raw_object_template(object_name)
+    obj = MISPObject(object_name, misp_objects_template_custom=template)
+    obj.is_new = True
+    obj.add_attribute(rel, value, type=mh.rel_type_mapping[rel], disable_correlation=False, to_ids=False, pythonify=True)
+    obj.add_attribute('blacklisted', '0', type="boolean", disable_correlation=True, to_ids=False, pythonify=True)
+
+    # Update timestamps
+    for attr in obj.Attribute:
+        update_timestamps(mh, attr)
+
+    return obj
+
 def get_all_attrs_by_rel(obj, rel):
     # mh.logger.debug(f"Getting ALL Attribute OBJECTs from object {obj.uuid} by relationship {rel}")
     attrs = obj.get_attributes_by_relation(rel)
@@ -560,6 +557,94 @@ def get_local_blocks(mh, event):
 
     return local_blocks
 
+def populate_known_pivots(mh, obj):
+    mh.logger.debug(f"Populating {obj.name} object with pivots already seen "
+        f"in event {obj.event_id}.")
+
+    if obj.name not in mh.obj_index_mapping:
+        mh.logger.error(f"Could not find {obj.name} object in obj_index_mapping")
+        mh.logger.error(f"Returning {obj.name} object without populating "
+            "known pivots.")
+        return obj
+
+    obj_index = mh.obj_index_mapping[obj.name]
+    obj_index_val = get_attr_val_by_rel(obj, obj_index)
+
+    event = get_event(mh, obj.event_id)
+    if not event:
+        mh.logger.error(f"Unable to retreive event {obj.event_id}.")
+        mh.logger.error(f"Returning {obj.name} object without populating known "
+            "pivots.")
+        return obj
+
+    if obj.name not in mh.obj_pivot_mapping:
+        mh.logger.error(f"Could not find pivot map for {obj.name}.")
+        mh.logger.error(f"Returning {obj.name} object without populating "
+            "known pivots.")
+        return obj
+
+    pivot_map = mh.obj_pivot_mapping[obj.name]
+    for attr_rel, pivot_obj in pivot_map.items():
+
+        if attr_rel not in mh.rel_type_mapping:
+            mh.logger.error(f"{attr_rel} not found in rel_type_mapping.")
+            mh.logger.errof(f"Returning {obj.name} object without populating "
+                "known pivots.")
+            return obj
+        else:
+            attr_rel_type = mh.rel_type_mapping[attr_rel]
+
+        if pivot_obj not in mh.obj_pivot_mapping:
+            mh.logger.error(f"Could not find pivot map for {pivot_obj}.")
+            mh.logger.error(f"Returning {obj.name} object without populating "
+                "known pivots.")
+            return obj
+
+        pivot_obj_attrs = mh.obj_pivot_mapping[pivot_obj]
+
+        if pivot_obj not in mh.obj_index_mapping:
+            mh.logger.error(f"Could not find {pivot_obj} object in obj_index_mapping")
+            mh.logger.error(f"Returning {obj.name} object without populating "
+                "known pivots.")
+            return obj
+
+        pivot_obj_index = mh.obj_index_mapping[pivot_obj]
+        
+
+        for k, v in pivot_obj_attrs.items():
+            if v == obj.name:
+                mh.logger.debug(f"Using pivot {k} from {pivot_obj} objs.")
+                pivot_rel = k
+                break
+
+        pivot_objs = event.get_objects_by_name(pivot_obj)
+        for po in pivot_objs:
+            po_attrs = po.get_attributes_by_relation(pivot_rel)
+            pivot_obj_index_val = get_attr_val_by_rel(po, pivot_obj_index)
+            for poa in po_attrs:
+                if poa.value == obj_index_val:
+                    comment=f"Found {po.name} object {pivot_obj_index_val} with "\
+                        f"{pivot_rel} attribute matching {obj_index_val}."
+                    mh.logger.info(comment)
+                    pivot_exists = False
+                    for obj_attr in obj.Attribute:
+                        if obj_attr.value == pivot_obj_index_val:
+                            pivot_exists = True
+                    if not pivot_exists:
+                        mh.logger.info(f"Adding {attr_rel} {pivot_obj_index_val} "
+                            f"to {obj.name} object [{obj.uuid}].")
+                        a = obj.add_attribute(attr_rel, pivot_obj_index_val,
+                            type=attr_rel_type, to_ids=False, comment=comment, 
+                            pythonify=True)
+                        update_timestamps(mh, a)
+                    else:
+                        mh.logger.debug(f"{pivot_obj_index_val} already exists "
+                            f"in {obj.name} object [{obj.uuid}]. Skipping!")
+
+    mh.logger.debug(f"Finished adding known pivots for {obj.name} "
+        f"object [{obj.uuid}]")
+    return obj
+
 def parse_cert_data(mh, cert, raw):
     parsed_data = raw['parsed']
     mh.logger.info(f"Parsing data for {cert.name} [{cert.uuid}] - "
@@ -575,9 +660,7 @@ def parse_cert_data(mh, cert, raw):
         type="text", disable_correlation=True, to_ids=False, pythonify=True)
     cert.add_attribute('cert-subject-dn', parsed_data['subject_dn'], 
         type="text", disable_correlation=True, to_ids=False, pythonify=True)
-    cert.add_attribute('blacklisted', '0', type="boolean", 
-        disable_correlation=True, to_ids=False, pythonify=True)
-
+    
     # Flag it as new so we know to populate related IPs
     cert.is_new = True
 

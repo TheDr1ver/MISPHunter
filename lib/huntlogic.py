@@ -38,6 +38,8 @@ def process_cert(mh, cert, event):
         return event
 
     # Enrich Cert Details
+    if not hasattr(cert, 'event_id'):
+        cert.event_id = str(event.id)
     cert = helper.enrich_cert_obj(mh, cert)
 
     # Even if something fails it should always return the original cert object
@@ -71,6 +73,8 @@ def process_host(mh, host, event):
     mh.logger.info(f"Processing host {host.uuid} from stage!")
 
     # Enrich the host object by extracting IOCs, comparing changes, etc.
+    if not hasattr(host, 'event_id'):
+        host.event_id = str(event.id)
     host = helper.enrich_host_obj(mh, host)
 
     if not host:

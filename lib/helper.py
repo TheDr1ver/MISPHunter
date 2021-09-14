@@ -63,11 +63,12 @@ def log_stage_details(mh):
 
 def enrich_cert_obj(mh, cert):
     
+    mh.logger.info(f"Enriching {cert.name} [{cert.uuid}]")
+
     if 'censys-v1' not in mh.host_seed_services:
         mh.logger.error(f"censys-v1 is not enabled. Could not poll cert data!")
         return cert
-    
-    mh.logger.info(f"Enriching {cert.name} [{cert.uuid}]")
+        
     index_attr = misphandler.get_attr_obj_by_rel(cert, 'cert-sha256')
     index_val = misphandler.get_attr_val_by_rel(cert, 'cert-sha256')
     cert_hash = index_val
@@ -83,6 +84,7 @@ def enrich_cert_obj(mh, cert):
         if not raw:
             mh.logger.info(f"Could not find certificate data! Blacklisting and "
                 f"returning cert!")
+            cert = misphandler.populate_known_pivots(mh, cert)
             blacklisted = misphandler.get_attr_obj_by_rel(cert, 'blacklisted')
             blacklisted.value = "1"
             updated_cert = misphandler.update_existing_object(mh, cert)
@@ -93,6 +95,7 @@ def enrich_cert_obj(mh, cert):
 
         # We got a good response from Censys!
         cert = misphandler.parse_cert_data(mh, cert, raw)
+
         # Update cert object
         updated_cert = misphandler.update_existing_object(mh, cert)
         if not updated_cert:
@@ -121,10 +124,14 @@ def enrich_cert_obj(mh, cert):
         if cert.is_new:
             mh.logger.debug(f"cert obj is brand new. Update it!")
             update_cert = True
+            # Add IPs from this event that are hosting this cert
+            cert = misphandler.populate_known_pivots(mh, cert)
     if hasattr(cert, 'is_clone'):
         if cert.is_clone:
             mh.logger.debug(f"cert obj is a first-time clone. Update it!")
             update_cert = True
+            # Add IPs from this event that are hosting this cert
+            cert = misphandler.populate_known_pivots(mh, cert)
 
     if not update_cert:
         mh.logger.info(f"Update requirements were not met. Returning as-is.")
@@ -231,6 +238,17 @@ def enrich_host_obj(mh, host_obj):
 
         # Extract IOCs
         host_obj = force_ioc_extract(mh, checksum, host_obj, service, new_res)
+
+        # Populate known pivots
+        pop_known_pivots = False
+        if hasattr(host_obj, 'is_new'):
+            if host_obj.is_new:
+                pop_known_pivots = True
+        if hasattr(host_obj, 'is_clone'):
+            if host_obj.is_clone:
+                pop_known_pivots = True
+        if pop_known_pivots:
+            host_obj = misphandler.populate_known_pivots(mh, host_obj)
 
         # return host_obj
         # process next service
@@ -987,6 +1005,7 @@ def parse_cert(mh, cert_fingerprint_pattern, cert_name_pattern, iocs, new_res):
             domain_match = re.search(r"([A-Za-z0-9\-\.]+\.[A-Za-z]{2,})", v)
             if domain_match:
                 domain = domain_match.group(1)
+                domain = domain.lstrip(".")
                 if 'domains' not in iocs:
                     iocs['domains'] = [domain]
                     if 'context' not in iocs:

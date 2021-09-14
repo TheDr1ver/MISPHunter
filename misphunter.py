@@ -91,6 +91,39 @@ class MISPHunter():
                 f"Exception: {ex}  - occurred while loading MISP", exc_info=True)
             raise
 
+        self.obj_index_mapping = {
+            "misphunter-seed": "search-string",
+            "misphunter-host": "host-ip",
+            "misphunter-cert": "cert-sha256",
+            "misphunter-dns": "domain",
+            "misphunter-malware": "sha256"
+        }
+
+        self.rel_type_mapping = {
+            "cert-ip": "ip-dst",
+            "cert-sha256": "x509-fingerprint-sha256",
+            "domain": "domain",
+            "extracted-certificate": "x509-fingerprint-sha256",
+            "extracted-domain": "domain",
+            "found-host": "ip-dst",
+            "host-ip": "ip-dst",
+            "search-string": "text",
+            "sha256": "sha256"
+        }
+
+        self.obj_pivot_mapping = {
+            "misphunter-seed": {
+                "found-host" : "misphunter-host"
+            },
+            "misphunter-host": {
+                "extracted-certificate": "misphunter-cert",
+                "extracted-domain": "misphunter-domain"
+            },
+            "misphunter-cert": {
+                "cert-ip": "misphunter-host"
+            }
+        }
+
     def run(self):
         self.logger.info(f"\n###############################################################################\n\n# "\
                 "GIDDY-UP, HUNTER!\n"\
@@ -169,35 +202,6 @@ class MISPHunter():
             # mh.event_dns = [<misphunter-dns>]
             mh.event_malware = misphandler.get_event_objects(self, event, 'misphunter-malware')
             # mh.event_malware = [<misphunter-malware>]
-
-            mh.obj_index_mapping = {
-                "misphunter-seed": "search-string",
-                "misphunter-host": "host-ip",
-                "misphunter-cert": "cert-sha256",
-                "misphunter-dns": "domain",
-                "misphunter-malware": "sha256"
-            }
-
-            mh.rel_type_mapping = {
-                "search-string": "text",
-                "host-ip": "ip-dst",
-                "cert-sha256": "x509-fingerprint-sha256",
-                "domain": "domain",
-                "sha256": "sha256"
-            }
-
-            mh.obj_pivot_mapping = {
-                "misphunter-seed": {
-                    "found-host" : "misphunter-host"
-                },
-                "misphunter-host": {
-                    "extracted-certificate": "misphunter-cert",
-                    "extracted-domain": "misphunter-domain"
-                },
-                "misphunter-cert": {
-                    "cert-ip": "misphunter-host"
-                }
-            }
             
             # Reset updated objects and found pivots for each event processed
             mh.event_staged_objects = []
