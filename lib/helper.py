@@ -479,7 +479,7 @@ def build_cert_host_rels(mh, event, rel_index):
     # mh.logger.debug(f"\n\nrel_index:\n\n")
     # mh.logger.debug(f"{pformat(rel_index)}")
     mh.logger.info(f"Found {num_certs} certs in this event with {num_existing_rels} existing relationships. Added {num_new_rels} new relationships!")
-    return rel_index
+    return rel_index, num_new_rels
 
 def build_seed_host_rels(mh, event, rel_index):
     mh.logger.info(f"Building seed -> host relationships...")
@@ -515,7 +515,7 @@ def build_seed_host_rels(mh, event, rel_index):
                         num_existing_rels += 1
                         # mh.logger.debug(f"Relationship between host {ip} [{host_uuid}] and seed [{seed_uuid}] already exists!")
     mh.logger.info(f"Found {num_seeds} seeds in this event with {num_existing_rels} existing relationships. Added {num_new_rels} new relationships!")
-    return rel_index
+    return rel_index, num_new_rels
 
 def check_block(mh, ip, blocks):
     skip = False

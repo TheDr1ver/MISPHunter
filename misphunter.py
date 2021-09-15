@@ -239,6 +239,8 @@ class MISPHunter():
             #   or dns/domain objects that are clearly shared hosts
             event = huntlogic.auto_blacklist(self, event)
 
+            mh.logger.info(f"Finished processing event {event_id}!")
+
         total_api = self.censys_v2_api_counter + self.shodan_api_counter
         self.logger.info(f"\n\nTOTAL CENSYS API CALLS: {self.censys_v2_api_counter}\n"
             f"TOTAL SHODAN API CALLS: {self.shodan_api_counter}\n"

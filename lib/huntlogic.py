@@ -151,8 +151,13 @@ def process_seed(mh, seed, event):
     # skip this seed
     if not run_search:
         return event
-    # If run_search is True, it means the seed object was updated.
-    # We need to get a fresh copy of event to return going forward
+    
+    # If run_search = True we should update the search last_seen values
+    index_attr = misphandler.get_attr_obj_by_rel(seed, 
+        mh.obj_index_mapping[seed.name])
+    misphandler.update_timestamps(mh, index_attr)
+    
+    # Also make sure we have the latest event after the check_timer updates
     updated_event = misphandler.get_event(mh, event.id)
     if not updated_event:
         mh.logger.error(f"Failed getting event {event.id}... This "
@@ -288,12 +293,7 @@ def stage_object(mh, object_name, pivot_rel, value, event):
     if found_obj:
         mh.logger.info(f"Found existing {object_name} object [{found_obj.uuid}] "
             f"for event {event.info}... Using that!")
-        # update timestamps for pivot_rel attr matching value
-        misphandler.update_timestamps(mh, pivot_attr)
-        # obj = update object in MISP
-        updated_obj = misphandler.update_existing_object(mh, found_obj)
-        # retrieve updated event
-        event = misphandler.get_event(mh, event.id)
+        updated_obj = found_obj
         updated_obj.is_new = False
         updated_obj.is_clone = False
 
@@ -486,11 +486,25 @@ def process_new_tags(mh, event):
 def process_relationships(mh, event):
     # Organize events into rel_index so it's easier to process relationships
     mh.logger.info(f"Processing relationships for event [{event.id}] - {event.info}")
+    total_new_rels = 0
     rel_index = helper.organize_event_objects(mh, event)
     # Relate certs to IPs they were found on
-    rel_index = helper.build_cert_host_rels(mh, event, rel_index)
+    rel_index, num_new_rels = helper.build_cert_host_rels(mh, event, rel_index)
+    total_new_rels += num_new_rels
     # Relate seeds to hosts those seeds discovered
     rel_index = helper.build_seed_host_rels(mh, event, rel_index)
+    total_new_rels += num_new_rels
+
     # Update the event to finalize the relationships
-    event = misphandler.update_event(mh, event)
+    if total_new_rels > 0:
+        mh.logger.info(f"{total_new_rels} new relationships were built!")
+        updated_event = misphandler.update_event(mh, event)
+        if not updated_event:
+            mh.logger.error(f"Error updating object relationships in "
+                f"{event.info}. Leaving event as-is.")
+            return event
+        event = updated_event
+    else:
+        mh.logger.info(f"No new relationships were found. Leaving event as-is.")
+
     return event
