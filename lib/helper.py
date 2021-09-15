@@ -164,7 +164,7 @@ def enrich_host_obj(mh, host_obj):
 
     for service, data in raw.items():
         if not data:
-            continue
+            data = {}
         service_processed = False
         mh.logger.info(f"#### Processing raw data for {service}...")
         if 'misphunter_processed' not in data:
