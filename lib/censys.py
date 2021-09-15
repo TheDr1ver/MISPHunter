@@ -105,7 +105,7 @@ def censys_v2_cleanup_rules():
             },
             'values': {
                 'startswith': [],
-                'endswith': ['censys.io'],
+                'endswith': ['censys.io', 'w3.org'],
                 'equals': [],
                 'contains': []
             }
