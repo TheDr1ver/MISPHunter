@@ -682,6 +682,13 @@ def force_ioc_extract(mh, checksum, host_obj, service, new_res):
 
     # Get dict of indicators we don't want to allow for IOC extraction
     cleanup = get_cleanup(service)
+    # attempt to catch scanner IP
+    scanner_ips = []
+    for key, val in new_res.items():
+        if key.endswith("source_ip"):
+            mh.logger.debug(f"FOUND SCANNER IP FROM {key}: {val}")
+            scanner_ip = val
+            scanner_ips.append(scanner_ip)
 
     # Get all the IOCs that can be hit by a generic regex on a blob of text
     iocs = get_iocs(mh, new_res, cleanup)
@@ -695,6 +702,12 @@ def force_ioc_extract(mh, checksum, host_obj, service, new_res):
         iocs = shodan.shodan_extract_certs(mh, iocs, new_res)
     else:
         mh.logger.error(f"Unable to parse cert using service {service} - we weren't prepared for this!")
+
+    # Before updating the object, remove any scanner IPs
+    for scanner_ip in scanner_ips:
+        if scanner_ip in iocs['ips']:
+            mh.logger.info(f"Removing potential scanner IP {scanner_ip} from IOCs.")
+            iocs['ips'].remove(scanner_ip)
 
     if mh.debugging:
         mh.logger.debug(f"#### All IOCs:\n{pformat(iocs)}")
