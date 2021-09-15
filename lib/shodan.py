@@ -200,10 +200,12 @@ def shodan_search_ip(mh, host_obj):
             # raw = {"error": "IP Not Found"}
             return False
 
+    '''
     except Exception as e:
         mh.logger.error(f"Error getting IP {ip}: {e}")
         # raw = {"error": "IP Not Found"}
         return False
+    '''
     
     return raw
     

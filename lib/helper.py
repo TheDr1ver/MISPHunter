@@ -818,6 +818,8 @@ def get_iocs(mh, data, cleanup):
     domains = []
     context = {}
 
+    url_domains = []
+
     for k, v in data.items():
         if not isinstance(v, str):
             continue
@@ -836,7 +838,8 @@ def get_iocs(mh, data, cleanup):
         try:
             for url in iocextract.extract_urls(v, refang=True):
                 if url not in urls:
-                    url_match = re.search(r"(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})", url)
+                    url_pattern = r"(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[a-z\.]+(/[^\s\"']*)*|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[a-z\.]+(/[^\s\"']*)*|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[a-z\.]+(/[^\s\"']*)*|www\.[a-zA-Z0-9]+\.[a-z\.]+(/[^\s\"']*)*)"
+                    url_match = re.search(url_pattern, url)
                     if url_match:
                         urls.append(url_match.group())
                         context[url_match.group()] = k
@@ -860,6 +863,8 @@ def get_iocs(mh, data, cleanup):
             domain_match = re.search(r":\/\/(.*?)(/|$)", url)
             if domain_match:
                 domain = domain_match.group(1)
+                if domain not in url_domains:
+                    url_domains.append(domain)
                 if domain not in domains:
                     domains.append(domain)
                     context[domain] = k
@@ -867,7 +872,7 @@ def get_iocs(mh, data, cleanup):
     # clean junk domains
     if len(domains)>0:
         domains = clean_junk_domains(mh, domains, context, cleanup, misp)
-    
+            
     # clean junk IPs
     if len(ips)>0:
         if 'ips' in cleanup.keys():
@@ -881,6 +886,19 @@ def get_iocs(mh, data, cleanup):
     if len(urls)>0:
         if 'urls' in cleanup.keys():
             urls = junk_iocs(mh, urls, context, cleanup['urls'])
+
+    # Remove bad URLs based on which domains were removed
+    urls_copy = urls.copy()
+    if len(domains) > 0 and len(urls) > 0:
+        for domain in url_domains:
+            if domain not in domains:
+                for url in urls_copy:
+                    domain_match = re.search(r":\/\/(.*?)(/|$)", url)
+                    dm = domain_match.group(1)
+                    if dm == domain:
+                        mh.logger.info(f"Removing {url} from urls because its "
+                            f"domain is not in our domains list.")
+                        urls.remove(url)
 
     iocs = {
         'ips': ips,
