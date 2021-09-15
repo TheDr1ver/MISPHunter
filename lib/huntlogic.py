@@ -413,9 +413,12 @@ def process_new_tags(mh, event):
         for attr in obj.Attribute:
             # Highlight empty json blobs
             if attr.value == "99914b932bd37a50b983c5e7c90ae93b.json":
-                mh.logger.debug(f"Found empty JSON file response. Consider "
-                    f"blacklisting {obj.name} [{obj.uuid}]!")
-                misphandler.tag(mh, attr, "EMPTY-JSON")
+                attr_tags = []
+                attr_tags = misphandler.check_tags(attr)
+                if "EMPTY-JSON" not in attr_tags:
+                    mh.logger.info(f"Found empty JSON file response. Consider "
+                        f"blacklisting {obj.name} [{obj.uuid}]!")
+                    misphandler.tag(mh, attr, "EMPTY-JSON")
 
             # If first_seen isn't set we don't know how new this really is. 
             # Ignore it.
