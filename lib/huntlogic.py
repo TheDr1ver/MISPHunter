@@ -405,6 +405,9 @@ def process_new_tags(mh, event):
         "x509": "misphunter:new-discovery=\"certificate\"",
     }
 
+    added_tags = []
+    removed_tags = []
+
     new_tags = []
 
     new_time = int(time()) - (int(mh.new_discovery_threshold) * 60 * 60)
@@ -445,7 +448,9 @@ def process_new_tags(mh, event):
                 # if this tag exists already for this attribute, no need to 
                 # tag it again.
                 if tag not in attr_tags:
-                    misphandler.tag(mh, attr, tag)
+                    # misphandler.tag(mh, attr, tag)
+                    tup = (attr, tag)
+                    added_tags.append(tup)
                     # Track stats
                     helper.track_stats_tags_added(mh, tag, attr)
                 else:
@@ -458,9 +463,18 @@ def process_new_tags(mh, event):
                     if tag.startswith("misphunter:new-discovery="):
                         mh.logger.info(f"Removing new-discovery tag {tag} from old attribute {attr.uuid}.\n\t"
                             f"attribute was first_seen {first_seen} and we need it to be newer than {new_time}.")
-                        misphandler.untag(mh, attr, tag)
+                        # misphandler.untag(mh, attr, tag)
+                        tup = (attr, tag)
+                        removed_tags.append(tup)
                         # Track stats
                         helper.track_stats_tags_removed(mh, tag, attr)
+
+    # Apply untags first so they appear below new tags
+    for tag in removed_tags:
+        misphandler.untag(mh, tag[0], tag[1])
+    # Then apply new tags
+    for tag in added_tags:
+        misphandler.tag(mh, tag[0], tag[1])
 
                 
     event_tags = misphandler.check_tags(event)
