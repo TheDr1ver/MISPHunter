@@ -56,7 +56,8 @@ def censys_v1_clean_json_keys():
     ignored_keys = [
         "updated_at",
         "observed_at",
-        "perspective_id"
+        "perspective_id",
+        "source_ip"
     ]
 
     return ignored_keys
@@ -136,9 +137,8 @@ def censys_v2_clean_json_keys():
     ignored_keys = [
         "updated_at",
         "observed_at",
-        "perspective_id"
-        # "perspective_id",
-        # "source_ip"
+        "perspective_id",
+        "source_ip"
     ]
 
     return ignored_keys

@@ -167,6 +167,7 @@ def enrich_host_obj(mh, host_obj):
             data = {}
         service_processed = False
         mh.logger.info(f"#### Processing raw data for {service}...")
+
         if 'misphunter_processed' not in data:
             mh.logger.debug(f"Data returned appears to be new...")
             # Cleanup raw JSON response for processing
@@ -682,14 +683,7 @@ def force_ioc_extract(mh, checksum, host_obj, service, new_res):
 
     # Get dict of indicators we don't want to allow for IOC extraction
     cleanup = get_cleanup(service)
-    # attempt to catch scanner IP
-    scanner_ips = []
-    for key, val in new_res.items():
-        if key.endswith("source_ip"):
-            mh.logger.debug(f"FOUND SCANNER IP FROM {key}: {val}")
-            scanner_ip = val
-            scanner_ips.append(scanner_ip)
-
+    
     # Get all the IOCs that can be hit by a generic regex on a blob of text
     iocs = get_iocs(mh, new_res, cleanup)
 
@@ -704,7 +698,7 @@ def force_ioc_extract(mh, checksum, host_obj, service, new_res):
         mh.logger.error(f"Unable to parse cert using service {service} - we weren't prepared for this!")
 
     # Before updating the object, remove any scanner IPs
-    for scanner_ip in scanner_ips:
+    for scanner_ip in mh.scanner_ips:
         if scanner_ip in iocs['ips']:
             mh.logger.info(f"Removing potential scanner IP {scanner_ip} from IOCs.")
             iocs['ips'].remove(scanner_ip)
@@ -851,7 +845,7 @@ def get_iocs(mh, data, cleanup):
         try:
             for url in iocextract.extract_urls(v, refang=True):
                 if url not in urls:
-                    url_pattern = r"(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[a-z\.]+(/[^\s\"']*)*|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[a-z\.]+(/[^\s\"']*)*|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[a-z\.]+(/[^\s\"']*)*|www\.[a-zA-Z0-9]+\.[a-z\.]+(/[^\s\"']*)*)"
+                    url_pattern = r"(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.([a-z\.]+|[\d\.]+)(:\d+)?(/[^\s\"']*)*|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.([a-z\.]+|[\d\.]+)(:\d+)?(/[^\s\"']*)*|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.([a-z\.]+|[\d\.]+)(:\d+)?(/[^\s\"']*)*|www\.[a-zA-Z0-9]+\.([a-z\.]+|[\d\.]+)(:\d+)?(/[^\s\"']*)*)"
                     url_match = re.search(url_pattern, url)
                     if url_match:
                         urls.append(url_match.group())
@@ -1237,6 +1231,15 @@ def sort_json(unsorted_json):
 
 def sort_raw_json(mh, raw, hunt):
     flat_unsorted_json = flatten_data(mh, raw)    
+
+    # Attempt to collect scanner IPs before they get stripped
+    for key, val in flat_unsorted_json.items():
+        if key.endswith("source_ip"):
+            scanner_ip = val
+            if scanner_ip not in mh.scanner_ips:
+                mh.logger.debug(f"FOUND SCANNER IP FROM {key}: {val}")
+                mh.scanner_ips.append(scanner_ip)
+
     unsorted_json = clean_keys(mh, flat_unsorted_json, hunt)
     # mh.logger.debug(f"\n\nAfter running helper.clean_keys, unsorted_json:\n\n{unsorted_json}\n\n")
     unsorted_json_key_swap = swap_json_keys(mh, unsorted_json)

@@ -124,6 +124,9 @@ class MISPHunter():
             }
         }
 
+        # Keep rolling talley of scanner_ips to attempt to keep them blacklisted
+        self.scanner_ips = []
+
     def run(self):
         self.logger.info(f"\n###############################################################################\n\n# "\
                 "GIDDY-UP, HUNTER!\n"\
