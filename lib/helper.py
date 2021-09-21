@@ -592,6 +592,57 @@ def clean_keys(mh, unsorted_json, hunt):
 
     return unsorted_json
 
+def list_keys_or_service(old_dict, new_dict, missing_keys):
+    response = []
+    services = []
+    pattern = r"^(\d+)_"
+
+    # Get all the services from the new dict
+    for k in missing_keys:
+        match = re.match(pattern, k)
+        if not match:
+            continue
+        service_prefix = match[1]
+        if service_prefix not in services:
+            services.append(service_prefix)
+
+    for service in services:
+        in_new = False
+        # Check each service against new_dict
+        for k, v in new_dict.items():
+            if k.startswith(service):
+                in_new = True
+                break
+        in_old = False
+        # Check each service against old_dict
+        for k, v in old_dict.items():
+            if k.startswith(service):
+                in_old = True
+                break
+        # If either dict is missing the service, add generic port_service
+        if not in_new:
+            sn_key = f"{service}_service_name"
+            if sn_key in old_dict:
+                service_name = old_dict[sn_key].lower()
+            else:
+                service_name = "unk"
+            port_service = f"{service}_{service_name}"
+            response.append(port_service)
+        elif not in_old:
+            sn_key = f"{service}_service_name"
+            if sn_key in new_dict:
+                service_name = new_dict[sn_key].lower()
+            else:
+                service_name = "unk"
+            port_service = f"{service}_{service_name}"
+            response.append(port_service)
+        else:
+            for mk in missing_keys:
+                if mk.startswith(service):
+                    response.append(mk)
+    
+    return response
+
 def dict_compare(dict1, dict2):
     d1_missing_keys = dict2.keys()-dict1
     d2_missing_keys = dict1.keys()-dict2
@@ -599,9 +650,13 @@ def dict_compare(dict1, dict2):
 
     comment = ""
     if len(d1_missing_keys) > 0:
-        comment += f"Added keys: {str(list(d1_missing_keys))}\n"
+        keys = list_keys_or_service(dict1, dict2, d1_missing_keys)
+        # comment += f"Added keys: {str(list(d1_missing_keys))}\n"
+        comment += f"Added keys: {str(list(keys))}\n"
     if len(d2_missing_keys) > 0:
-        comment += f"Removed keys: {str(list(d2_missing_keys))}\n"
+        keys = list_keys_or_service(dict1, dict2, d2_missing_keys)
+        # comment += f"Removed keys: {str(list(d2_missing_keys))}\n"
+        comment += f"Removed keys: {str(list(keys))}\n"
     if len(diff_val_keys) > 0:
         comment += f"Modified keys: {str(diff_val_keys)}\n"
     if comment == "":
