@@ -221,8 +221,10 @@ def process_seed(mh, seed, event):
             for attr in ip_attrs:
                 if attr.value == ip:
                     misphandler.update_timestamps(mh, attr)
+                    # Updated timestamps mean we want to update the seed obj
+                    new_host = True
 
-    # If any new IPs were found, update the seed object
+    # If any IPs were found, update the seed object
     if new_host:
         updated_seed = misphandler.update_existing_object(mh, seed)
         # Make sure it updated properly
