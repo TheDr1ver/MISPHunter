@@ -138,6 +138,10 @@ class MISPHunter():
                 "                                               `/           \"\"\"\"\n"
                 "\n###############################################################################\n\n")
         # Reset stats for each run
+        self.censys_v1_api_counter = 0
+        self.censys_v2_api_counter = 0
+        self.shodan_api_counter = 0
+
         self.run_stats = {
             "auto_blacklists_added" : {'total': 0},
             "certs_added": {'total': 0},
