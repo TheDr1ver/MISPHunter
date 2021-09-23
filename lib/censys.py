@@ -53,12 +53,20 @@ def censys_v1_clean_json_keys():
     # across time. e.g. when taking the hash of two blobs of censys data, the
     # hash would change if they both had different time_scraped values. So we
     # want to remove those before the comparison.
-    ignored_keys = [
-        "updated_at",
-        "observed_at",
-        "perspective_id",
-        "source_ip"
-    ]
+    
+    ignored_keys = {
+        "startswith": [],
+        "endswith": [
+            "updated_at",
+            "observed_at",
+            "perspective_id",
+            "source_ip"
+        ],
+        "equals": [],
+        "contains": [
+            "__encoding"
+        ]
+    }
 
     return ignored_keys
 
@@ -134,12 +142,20 @@ def censys_v2_clean_json_keys():
     # across time. e.g. when taking the hash of two blobs of censys data, the
     # hash would change if they both had different time_scraped values. So we
     # want to remove those before the comparison.
-    ignored_keys = [
-        "updated_at",
-        "observed_at",
-        "perspective_id",
-        "source_ip"
-    ]
+    
+    ignored_keys = {
+        "startswith": [],
+        "endswith": [
+            "updated_at",
+            "observed_at",
+            "perspective_id",
+            "source_ip"
+        ],
+        "equals": [],
+        "contains": [
+            "__encoding"
+        ]
+    }
 
     return ignored_keys
 
