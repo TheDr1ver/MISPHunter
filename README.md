@@ -32,23 +32,15 @@ cp -R ./custom_taxonomies/taxonomies/* /var/www/MISP/app/files/taxonomies
 chown -R www-data:www-data /var/www/MISP/app/files/taxonomies/misphunter
 ```
 
-Visit `<your_misp_url>/objectTemplates/index` and click `Update Objects` to ensure the objects are up to date. 
+Browse to `https://<your_misp_url>/objectTemplates/index` and click `Update Objects` to ensure the objects are up to date. 
 Check to make sure that the `misphunter-*` object templates are all loaded and active.
 
-Visit `<your_misp_url>/taxonomies/index` and click `Update Taxonomies` to ensure the taxonomies are up to date. 
+Browse to `https://<your_misp_url>/taxonomies/index` and click `Update Taxonomies` to ensure the taxonomies are up to date. 
 Make sure the MISPHunter Taxonomy is enabled. You may have to click the 'play' icon to enable them. 
 When viewing the taxonomy (eyeball button) you should see it populated with a gradient of colored tags on the right-hand side. 
 If those tags do not appear, click the checkbox to select all tags, then click the + sign to `Create / update selected tags`.
 
-Make sure you've got the right dependencies. I might make this into a `requirements.txt` at some point, but for now just 
-`pip install` the following and you should be okay:
-
-```
-pymisp
-iocextract
-dateparser
-shodan
-```
+Make sure you've got the right dependencies. `pip install -r REQUIREMENTS` (latest version was created with 3.9.7)
 
 That's it! The initial setup is complete.
 

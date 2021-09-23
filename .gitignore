@@ -2,6 +2,7 @@
 *.log
 *.ipynb
 results/
+venv/
 
 *~
 .DS_Store
