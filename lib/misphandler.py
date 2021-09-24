@@ -41,7 +41,9 @@ def add_json_attr(mh, checksum, raw_sorted_json_text, host_obj, json_type, comme
     json_filename = str(checksum)+".json"
     mh.logger.info(f"Saving raw JSON blob {json_filename} to host_obj {host_obj.uuid}...")
     pseudofile = BytesIO(raw_sorted_json_text.encode('utf-8'))
-    new_attr = host_obj.add_attribute(json_type, value=json_filename, comment=comment, type='attachment', to_ids=False, data=pseudofile, distribution=5)
+    new_attr = host_obj.add_attribute(json_type, value=json_filename, 
+        comment=comment, type='attachment', to_ids=False, data=pseudofile, 
+        distribution=5, disable_correlation=True, pythonify=False)
     update_timestamps(mh, new_attr)
     mh.logger.debug(f"Object updated. Returning {host_obj}")
     
