@@ -584,35 +584,52 @@ def clean_keys(mh, unsorted_json, hunt):
                                     
     copy_blob = unsorted_json.copy()
     for k, v in copy_blob.items():
+        removed = False
         for position, vals in ignored_keys.items():
             if position=="startswith":
+                if removed:
+                    continue
                 for val in vals:
                     if k.startswith(val):
                         mh.logger.info(f"Removing unwanted key {k} for "
                             f"starting with {val}...")
                         mh.logger.debug(f"{copy_blob[k]}")
                         unsorted_json.pop(k)
+                        removed=True
+                        break
             elif position=="endswith":
+                if removed:
+                    continue
                 for val in vals:
                     if k.endswith(val):
                         mh.logger.info(f"Removing unwanted key {k} for "
                             f"ending with {val}...")
                         mh.logger.debug(f"{copy_blob[k]}")
                         unsorted_json.pop(k)
+                        removed=True
+                        break
             elif position=="equals":
+                if removed:
+                    continue
                 for val in vals:
                     if k==val:
                         mh.logger.info(f"Removing unwanted key {k} for "
                             f"equaling {val}...")
                         mh.logger.debug(f"{copy_blob[k]}")
                         unsorted_json.pop(k)
+                        removed=True
+                        break
             elif position=="contains":
+                if removed:
+                    continue
                 for val in vals:
                     if val in k:
                         mh.logger.info(f"Removing unwanted key {k} for "
                             f"containing {val}...")
                         mh.logger.debug(f"{copy_blob[k]}")
                         unsorted_json.pop(k)
+                        removed=True
+                        break
 
     return unsorted_json
 
