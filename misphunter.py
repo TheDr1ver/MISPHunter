@@ -11,7 +11,7 @@ from pymisp import PyMISP
 from lib import helper, huntlogic, misphandler
 
 class MISPHunter():
-    def __init__(self, logger=None):
+    def __init__(self, ssl_verify=True, logger=None):
 
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
                 
@@ -85,10 +85,14 @@ class MISPHunter():
             raise
 
         try:
-            self.misp = PyMISP(self.misp_url, self.misp_key, False)
+            self.misp = PyMISP(self.misp_url, self.misp_key, ssl=ssl_verify)
+            self.logger.info(f"MISP instance loaded successfully!")
         except Exception as ex:
             self.logger.error(
                 f"Exception: {ex}  - occurred while loading MISP", exc_info=True)
+            if ssl_verify:
+                self.logger.warning(f"SSL verify is set to True. If you're using "
+                f"a self-signed certificate, try running again with -k.")
             raise
 
         self.obj_index_mapping = {
@@ -302,6 +306,9 @@ if __name__ == "__main__":
             "tags get removed. Defaults to 72.")
     parser.add_argument("--update-threshold", type=int, default=24,
         help="Determines how old an object can be before using API calls to update it. Defaults to 24.")
+    parser.add_argument("-k", "--ssl-no-verify", action="store_false",
+        help="Disables verification of SSL certificate of the MISP instance. If you are using a "\
+            "self-signed certificate, make sure this option is set.")
     parser.add_argument("-s", "--run-as-service", action="store_true",
         help="Run MISPHunter as a service. This puts it into an infinite loop where it runs once an hour.")
     parser.add_argument("--debugging", action="store_true",
@@ -319,7 +326,10 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
 
-    mh = MISPHunter()
+    # SSL Verify
+    ssl_verify = args.ssl_no_verify
+
+    mh = MISPHunter(ssl_verify=ssl_verify)
 
     # DEBUGGING Vars
     mh.debugging = args.debugging
@@ -344,6 +354,8 @@ if __name__ == "__main__":
 
     # Service flag
     service = args.run_as_service
+
+    
 
     # DEBUG - REMOVE ME
     if mh.debugging:
