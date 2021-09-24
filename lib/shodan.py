@@ -81,18 +81,7 @@ def shodan_clean_json_keys():
     # hash would change if they both had different time_scraped values. So we
     # want to remove those before the comparison.
     # Looks for keys that END WITH the follow values
-    '''
-    ignored_keys = [
-        "timestamp",
-        "_shodan",
-        "_shodan_crawler",
-        "_shodan_module",
-        "_shodan_ptr",
-        "_shodan_options_scan",
-        "last_update",
-        "_id"
-    ]
-    '''
+    
     ignored_keys = {
         "startswith": [],
         "endswith": [
@@ -112,6 +101,7 @@ def shodan_clean_json_keys():
     }
 
     return ignored_keys
+
 
 def shodan_search(mh, search):
     mh.logger.debug(f"Running SHODAN search {search}")
