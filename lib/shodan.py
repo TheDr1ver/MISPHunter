@@ -96,7 +96,8 @@ def shodan_clean_json_keys():
         "contains": [
             "_shodan_",
             "_opts_",
-            "_location_"
+            "_location_",
+            "_references_"
         ]
     }
 
