@@ -56,6 +56,13 @@
             "multiple": false,
             "ui-priority": 1
         },
+        "json": {
+            "description": "Full JSON response with cert info",
+            "misp-attribute": "attachment",
+            "disable_correlation": true,
+            "multiple": true,
+            "ui-priority": 0
+        },
         "censys-v1-json": {
             "description": "Full JSON response with cert info",
             "misp-attribute": "attachment",
@@ -93,5 +100,5 @@
         "blacklisted"
     ],
     "uuid": "cc56882c-fc34-11eb-9672-000d3a98c781",
-    "version": 4
+    "version": 5
 }
