@@ -34,18 +34,21 @@
             "description": "Keeps track of the last time the search for this seed was executed.",
             "misp-attribute": "datetime",
             "disable_correlation": true,
+            "multiple": false,
             "ui-priority": 0
         },
         "update-freq": {
             "description": "Keeps track of how frequently this search should be re-run (in hours).",
             "misp-attribute": "text",
             "disable_correlation": true,
+            "multiple": false,
             "ui-priority": 0
         },
         "found-host": {
             "description": "Host that was discovered using this search.",
             "misp-attribute": "ip-dst",
             "disable_correlation": false,
+            "multiple": true,
             "ui-priority": 0
         }
     },
@@ -58,5 +61,5 @@
         "enabled"
     ],
     "uuid": "a891fc40-fad2-11eb-a495-000d3a98c781",
-    "version": 3
+    "version": 4
 }

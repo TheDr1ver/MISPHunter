@@ -11,24 +11,28 @@
             "description": "JSON blob returned for host",
             "misp-attribute": "attachment",
             "disable_correlation": true,
+            "multiple": true,
             "ui-priority": 0
         },
         "censys-v1-json": {
             "description": "JSON blob returned for host",
             "misp-attribute": "attachment",
             "disable_correlation": true,
+            "multiple": true,
             "ui-priority": 0
         },
         "censys-v2-json": {
             "description": "JSON blob returned for host",
             "misp-attribute": "attachment",
             "disable_correlation": true,
+            "multiple": true,
             "ui-priority": 0
         },
         "shodan-json": {
             "description": "JSON blob returned for host",
             "misp-attribute": "attachment",
             "disable_correlation": true,
+            "multiple": true,
             "ui-priority": 0
         },
         "blacklisted": {
@@ -42,30 +46,35 @@
             "description": "Certificate found on host",
             "misp-attribute": "x509-fingerprint-sha256",
             "disable_correlation": false,
+            "multiple": true,
             "ui-priority": 1
         },
         "extracted-domain": {
             "description": "Domain found on host",
             "misp-attribute": "domain",
             "disable_correlation": false,
+            "multiple": true,
             "ui-priority": 1
         },
         "extracted-email": {
             "description": "Email found on host",
             "misp-attribute": "email-src",
             "disable_correlation": false,
+            "multiple": true,
             "ui-priority": 1
         },
         "extracted-ip": {
             "description": "IP found on host",
             "misp-attribute": "attachment",
             "disable_correlation": false,
+            "multiple": true,
             "ui-priority": 1
         },
         "extracted-url": {
             "description": "URL found on host",
             "misp-attribute": "url",
             "disable_correlation": false,
+            "multiple": true,
             "ui-priority": 1
         }
     },
@@ -77,5 +86,5 @@
         "blacklisted"
     ],
     "uuid": "3d385c20-fae4-11eb-a4f5-000d3a98c781",
-    "version": 4
+    "version": 5
 }

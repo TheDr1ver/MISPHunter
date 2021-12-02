@@ -39,12 +39,14 @@
             "description": "IP found by pivoting on pivot-certificate",
             "misp-attribute": "ip-dst",
             "disable_correlation": false,
+            "multiple": true,
             "ui-priority": 1
         },
         "cert-domain": {
             "description": "Domain found by pivoting on pivot-certificate",
             "misp-attribute": "domain",
             "disable_correlation": false,
+            "multiple": true,
             "ui-priority": 1
         },
         "blacklisted": {
@@ -58,24 +60,28 @@
             "description": "Full JSON response with cert info",
             "misp-attribute": "attachment",
             "disable_correlation": true,
+            "multiple": true,
             "ui-priority": 0
         },
         "censys-v2-json": {
             "description": "Full JSON response with cert info",
             "misp-attribute": "attachment",
             "disable_correlation": true,
+            "multiple": true,
             "ui-priority": 0
         },
         "shodan-json": {
             "description": "Full JSON response with cert info",
             "misp-attribute": "attachment",
             "disable_correlation": true,
+            "multiple": true,
             "ui-priority": 0
         },
         "riskiq-json": {
             "description": "Full JSON response with cert info",
             "misp-attribute": "attachment",
             "disable_correlation": true,
+            "multiple": true,
             "ui-priority": 0
         }
     },
@@ -87,5 +93,5 @@
         "blacklisted"
     ],
     "uuid": "cc56882c-fc34-11eb-9672-000d3a98c781",
-    "version": 2
+    "version": 3
 }
