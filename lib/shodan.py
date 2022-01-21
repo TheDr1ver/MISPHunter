@@ -52,7 +52,13 @@ def shodan_cleanup_rules():
             },
             'values': {
                 'startswith': [],
-                'endswith': ['censys.io', 'w3.org'],
+                'endswith': [
+                    'w3.org',
+                    'launchpad.net',
+                    'debian.org',
+                    '.lencr.org',
+                    '.robotstxt.org'
+                ],
                 'equals': [],
                 'contains': []
             }
@@ -65,10 +71,20 @@ def shodan_cleanup_rules():
                 'contains': []
             },
             'values': {
-                'startswith': [],
-                'endswith': ['censys.io/'],
+                'startswith': [
+                    'http://www.w3.org/',
+                    'http://manpages.debian.org/',
+                    'https://bugs.launchpad.net/',
+                    'http://r3.o.lencr.org',
+                    'http://www.robotstxt.org/',
+                    'http://crt.sectigo.com/',
+                    'https://sectigo.com/'
+                ],
+                'endswith': [],
                 'equals': [],
-                'contains': []
+                'contains': [
+                    '.godaddy.com/'
+                ]
             }
         }
     }
